@@ -1,0 +1,7 @@
+# Ignore build output dir
+build/
+
+# Ignore common IDE or system files
+.cmake/
+CMakeUserPresets.json
+.DS_Store
