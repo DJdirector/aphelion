@@ -79,7 +79,7 @@ THEME loadTheme(const std::string& filepath) {
 int main() {
     try {
         // Read theme file
-        THEME currentTheme = loadTheme("theme.json");
+        THEME currentTheme = loadTheme("themes/theme.json");
 
         clearScreen();
 
