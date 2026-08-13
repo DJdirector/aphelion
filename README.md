@@ -12,10 +12,12 @@ Before building this project, ensure you have the following utilities installed 
 ## Project Structure
 
 ```txt
-MyProject/
+aphelion/
 ├── CMakeLists.txt        # Core CMake configuration script
 ├── .gitignore            # Git exclusion rules
 ├── README.md             # Project documentation and setup guide
+├── themes                
+│   └── theme.json        # Current only theme
 └── src/                  # Application source files
     └── main.cpp
 ```
