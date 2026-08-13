@@ -1,0 +1,13 @@
+{
+  "background":     "#32302f",
+  "foreground":     "#d4be98",
+  "cursor":         "#d4b398",
+  "accent":         "#ea6962",
+  "altBackground":  "#504945",
+  "red":            "#ea6962",
+  "green":          "#a9b665",
+  "yellow":         "#d8a657",
+  "orange":         "#e78a4e",
+  "blue":           "#7daea3",
+  "magenta":        "#d3869b"
+}
