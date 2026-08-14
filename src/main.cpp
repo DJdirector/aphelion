@@ -74,7 +74,7 @@ SETTINGS loadSettings(const std::string& file_path = "settings.json") {
 
   SETTINGS settings;
   settings.first_run = settings_data.value("first_run", true);
-  settings.theme = settings_data.value("theme", "gruvbox-material-soft-dark");
+  settings.theme = settings_data.value("theme", "aphelion-dark");
 
   return settings;
 }
