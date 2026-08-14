@@ -13,14 +13,17 @@ Before building this project, ensure you have the following utilities installed 
 
 ```txt
 aphelion/
-├── CMakeLists.txt                        # Core CMake configuration script
-├── .gitignore                            # Git exclusion rules
-├── README.md                             # Project documentation and setup guide
-├── themes                
-│   ├── aphelion-dark.json                # Current only theme
-│   └── gruvbox-material-soft-dark.json   # Alt theme
-└── src/                                  # Application source files
-    └── main.cpp
+├── CMakeLists.txt                       # Core CMake configuration script
+├── README.md                            # Project documentation and setup guide
+├── settings.json                        # Aphelion config file
+├── src                                  # Aphelion source files
+│   └── main.cpp
+├── themes                               
+│   ├── aphelion-dark.json               # Default theme
+│   └── gruvbox-material-soft-dark.json
+└── thinkers
+    ├── default.json                     # Default thinker
+    └── spinner.json
 ```
 
 ## How to Build
