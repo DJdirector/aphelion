@@ -1,7 +1,9 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <iomanip>
+#include <vector>
+#include <thread>
+#include <chrono>
 #include <stdexcept>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -12,6 +14,7 @@ namespace fs = std::filesystem;
 struct SETTINGS {
   bool first_run;
   std::string theme;
+  std::string thinker;
 };
 
 struct THEME {
@@ -28,11 +31,15 @@ struct THEME {
   std::string magenta;
 };
 
+struct THINKER {
+  int speed_ms;
+  std::vector<std::string> frames;
+};
+
 void clearScreen() {
   std::cout << "\033[2J\033[H" << std::flush;
 }
 
-// Convert hex into ANSI colored text
 void printHex(const std::string& hex, const std::string& text) {
   std::string clean_hex = hex;
   if (!clean_hex.empty() && clean_hex[0] == '#') {
@@ -57,11 +64,12 @@ SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   if (!fs::exists(file_path)) {
     json default_config = {
       {"first_run", true},
-      {"theme", "aphelion-dark"}
+      {"theme", "aphelion-dark"},
+      {"thinker", "default"}
     };
     std::ofstream out_file(file_path);
     out_file << default_config.dump(4);
-    return { true, "aphelion-dark" };
+    return { true, "aphelion-dark", "default" };
   }
 
   std::ifstream file(file_path);
@@ -75,12 +83,12 @@ SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   SETTINGS settings;
   settings.first_run = settings_data.value("first_run", true);
   settings.theme = settings_data.value("theme", "aphelion-dark");
+  settings.thinker = settings_data.value("thinker", "default");
 
   return settings;
 }
 
 THEME loadTheme(const std::string& theme_name) {
-  // Automatically map theme_name to themes/<theme_name>.json
   std::string file_path = "themes/" + theme_name + ".json";
 
   std::ifstream file(file_path);
@@ -107,13 +115,66 @@ THEME loadTheme(const std::string& theme_name) {
   return theme;
 }
 
+THINKER loadThinker(const std::string& thinker_name) {
+  std::string file_path = "thinkers/" + thinker_name + ".json";
+
+  std::ifstream file(file_path);
+  if (!file.is_open()) {
+    throw std::runtime_error("Failed to open thinker file at: " + file_path);
+  }
+
+  json thinker_data;
+  file >> thinker_data;
+
+  THINKER thinker;
+  thinker.speed_ms = thinker_data.value("speed_ms", 100);
+
+  if (thinker_data.contains("frames") && thinker_data["frames"].is_array()) {
+    thinker.frames = thinker_data["frames"].get<std::vector<std::string>>();
+  }
+
+  // Validate frame limits (minimum 2, maximum 10)
+  if (thinker.frames.size() < 2 || thinker.frames.size() > 10) {
+    throw std::runtime_error("Thinker frames count must be between 2 and 10! Got: " 
+                             + std::to_string(thinker.frames.size()));
+    }
+
+    return thinker;
+}
+
+void playThinkerAnimation(const THINKER& thinker, const THEME& theme, int duration_seconds) {
+  auto start_time = std::chrono::steady_clock::now();
+  size_t frame_index = 0;
+
+  // Hide terminal cursor during animation
+  std::cout << "\033[?25l";
+
+  while (true) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::steady_clock::now() - start_time
+    ).count();
+
+    if (elapsed >= duration_seconds) {
+      break;
+    }
+
+    // Print spinner frame, then backspace/carriage return so it stays in place
+    printHex(theme.accent, "\r" + thinker.frames[frame_index] + " Thinking...");
+    std::cout << std::flush;
+
+    frame_index = (frame_index + 1) % thinker.frames.size();
+    std::this_thread::sleep_for(std::chrono::milliseconds(thinker.speed_ms));
+  }
+
+  // Clear line and re-enable cursor
+  std::cout << "\r\033[K\033[?25h" << std::flush;
+}
+
 int main() {
   try {
-    // 1. Read app configuration
     SETTINGS settings = loadSettings("settings.json");
-
-    // 2. Read selected theme based on settings
     THEME current_theme = loadTheme(settings.theme);
+    THINKER current_thinker = loadThinker(settings.thinker);
 
     clearScreen();
 
@@ -121,20 +182,13 @@ int main() {
       printHex(current_theme.accent, "First run detected.\n\n");
     }
 
-    // Output current theme details
-    printHex(current_theme.background, "Background\n");
-    printHex(current_theme.foreground, "Foreground\n");
-    printHex(current_theme.cursor, "Cursor\n");
-    printHex(current_theme.accent, "Accent\n");
-    printHex(current_theme.alt_background, "Alt Background\n");
-    printHex(current_theme.red, "Red\n");
-    printHex(current_theme.green, "Green\n");
-    printHex(current_theme.yellow, "Yellow\n");
-    printHex(current_theme.orange, "Orange\n");
-    printHex(current_theme.blue, "Blue\n");
-    printHex(current_theme.magenta, "Magenta\n");
+    // Run animation test for 3 seconds using the loaded theme color
+    playThinkerAnimation(current_thinker, current_theme, 3);
+
+    printHex(current_theme.green, "Done thinking!\n");
 
   } catch (const std::exception& e) {
+    std::cout << "\033[?25h"; // Ensure cursor is visible if an error occurs
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
   }
