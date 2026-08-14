@@ -28,7 +28,7 @@ aphelion/
 
 ## How to Build
 
-This project uses an out-of-source build workflow to keep your workspace clean and prevent compiled binaries from being tracked by Git.
+This project uses an out-of-source build workflow to keep the workspace clean and prevent compiled binaries from being tracked by Git.
 
 ### 1. Generate the Build files
 
