@@ -13,12 +13,13 @@ Before building this project, ensure you have the following utilities installed 
 
 ```txt
 aphelion/
-├── CMakeLists.txt        # Core CMake configuration script
-├── .gitignore            # Git exclusion rules
-├── README.md             # Project documentation and setup guide
+├── CMakeLists.txt                        # Core CMake configuration script
+├── .gitignore                            # Git exclusion rules
+├── README.md                             # Project documentation and setup guide
 ├── themes                
-│   └── theme.json        # Current only theme
-└── src/                  # Application source files
+│   ├── aphelion-dark.json                # Current only theme
+│   └── gruvbox-material-soft-dark.json   # Alt theme
+└── src/                                  # Application source files
     └── main.cpp
 ```
 
