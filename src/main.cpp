@@ -12,7 +12,7 @@ struct THEME {
     std::string foreground;
     std::string cursor;
     std::string accent;
-    std::string altBackground;
+    std::string alt_background;
     std::string red;
     std::string green;
     std::string yellow;
@@ -60,17 +60,17 @@ THEME loadTheme(const std::string& filepath) {
     file >> themeData;
 
     THEME theme;
-    theme.background    = themeData.value("background", "#000000");
-    theme.foreground    = themeData.value("foreground", "#ffffff");
-    theme.cursor        = themeData.value("cursor", "#ffffff");
-    theme.accent        = themeData.value("accent", "#ffffff");
-    theme.altBackground = themeData.value("alt_background", "#000000");
-    theme.red           = themeData.value("red", "#ff0000");
-    theme.green         = themeData.value("green", "#00ff00");
-    theme.yellow        = themeData.value("yellow", "#ffff00");
-    theme.orange        = themeData.value("orange", "#ffa500");
-    theme.blue          = themeData.value("blue", "#0000ff");
-    theme.magenta       = themeData.value("magenta", "#ff00ff");
+    theme.background     = themeData.value("background", "#000000");
+    theme.foreground     = themeData.value("foreground", "#ffffff");
+    theme.cursor         = themeData.value("cursor", "#ffffff");
+    theme.accent         = themeData.value("accent", "#ffffff");
+    theme.alt_background = themeData.value("alt_background", "#000000");
+    theme.red            = themeData.value("red", "#ff0000");
+    theme.green          = themeData.value("green", "#00ff00");
+    theme.yellow         = themeData.value("yellow", "#ffff00");
+    theme.orange         = themeData.value("orange", "#ffa500");
+    theme.blue           = themeData.value("blue", "#0000ff");
+    theme.magenta        = themeData.value("magenta", "#ff00ff");
 
     return theme;
 }
@@ -88,7 +88,7 @@ int main() {
         printHex(currentTheme.foreground, "Foreground\n");
         printHex(currentTheme.cursor, "Cursor\n");
         printHex(currentTheme.accent, "Accent\n");
-        printHex(currentTheme.altBackground, "Alt Background\n");
+        printHex(currentTheme.alt_background, "Alt Background\n");
         printHex(currentTheme.red, "Red\n");
         printHex(currentTheme.green, "Green\n");
         printHex(currentTheme.yellow, "Yellow\n");
@@ -101,6 +101,3 @@ int main() {
     }
     return 0;
 }
-
-
-

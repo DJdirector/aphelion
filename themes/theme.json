@@ -3,7 +3,7 @@
   "foreground":     "#d4be98",
   "cursor":         "#d4b398",
   "accent":         "#ea6962",
-  "altBackground":  "#504945",
+  "alt_background": "#504945",
   "red":            "#ea6962",
   "green":          "#a9b665",
   "yellow":         "#d8a657",
