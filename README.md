@@ -18,12 +18,8 @@ aphelion/
 ├── settings.json                        # Aphelion config file
 ├── src                                  # Aphelion source files
 │   └── main.cpp
-├── themes                               
-│   ├── aphelion-dark.json               # Default theme
-│   └── gruvbox-material-soft-dark.json
-└── thinkers
-    ├── default.json                     # Default thinker
-    └── spinner.json
+├── themes                               # Theme files
+└── thinkers                             # Thinker files
 ```
 
 ## How to Build
