@@ -6,7 +6,15 @@
 #include <chrono>
 #include <stdexcept>
 #include <filesystem>
+#include <random>
 #include <nlohmann/json.hpp>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -38,6 +46,21 @@ struct THINKER {
 
 void clearScreen() {
   std::cout << "\033[2J\033[H" << std::flush;
+}
+
+int getTerminalWidth() {
+#if defined(_WIN32)
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+    return csbi.srWindow.Right - csbi.srWindow.Left + 1;
+  }
+#else
+  struct winsize w;
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0) {
+    return w.ws_col;
+  }
+#endif
+  return 80; // Fallback width
 }
 
 void printHex(const std::string& hex, const std::string& text) {
@@ -88,6 +111,21 @@ SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   return settings;
 }
 
+void saveSettings(const SETTINGS& settings, const std::string& file_path = "settings.json") {
+  json settings_data = {
+    {"first_run", settings.first_run},
+    {"theme", settings.theme},
+    {"thinker", settings.thinker}
+  };
+
+  std::ofstream out_file(file_path);
+  if (!out_file.is_open()) {
+    throw std::runtime_error("Failed to save settings file at: " + file_path);
+  }
+
+  out_file << settings_data.dump(4);
+}
+
 THEME loadTheme(const std::string& theme_name) {
   std::string file_path = "themes/" + theme_name + ".json";
 
@@ -133,41 +171,28 @@ THINKER loadThinker(const std::string& thinker_name) {
     thinker.frames = thinker_data["frames"].get<std::vector<std::string>>();
   }
 
-  // Validate frame limits (minimum 2, maximum 10)
   if (thinker.frames.size() < 2 || thinker.frames.size() > 10) {
     throw std::runtime_error("Thinker frames count must be between 2 and 10! Got: " 
                              + std::to_string(thinker.frames.size()));
-    }
-
-    return thinker;
-}
-
-void playThinkerAnimation(const THINKER& thinker, const THEME& theme, int duration_seconds) {
-  auto start_time = std::chrono::steady_clock::now();
-  size_t frame_index = 0;
-
-  // Hide terminal cursor during animation
-  std::cout << "\033[?25l";
-
-  while (true) {
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::steady_clock::now() - start_time
-    ).count();
-
-    if (elapsed >= duration_seconds) {
-      break;
-    }
-
-    // Print spinner frame, then backspace/carriage return so it stays in place
-    printHex(theme.accent, "\r" + thinker.frames[frame_index] + " Thinking...");
-    std::cout << std::flush;
-
-    frame_index = (frame_index + 1) % thinker.frames.size();
-    std::this_thread::sleep_for(std::chrono::milliseconds(thinker.speed_ms));
   }
 
-  // Clear line and re-enable cursor
-  std::cout << "\r\033[K\033[?25h" << std::flush;
+  return thinker;
+}
+
+std::string getRandomWelcomeMessage() {
+  std::vector<std::string> messages = {
+    "☄ Any new ideas to explore?",
+    "☄ Lets jump in",
+    "☄ What should we focus on?",
+    "☄ Lets get into it",
+    "☄ What can I help with?"
+  };
+
+  static std::random_device rd;
+  static std::mt19937 gen(rd());
+  std::uniform_int_distribution<size_t> dist(0, messages.size() - 1);
+
+  return messages[dist(gen)];
 }
 
 int main() {
@@ -179,16 +204,34 @@ int main() {
     clearScreen();
 
     if (settings.first_run) {
-      printHex(current_theme.accent, "First run detected.\n\n");
+      printHex(current_theme.accent, "☄ Hello there, im aphelion. Lets get into it.\n\n");
+            
+      settings.first_run = false;
+      saveSettings(settings, "settings.json");
+    } else {
+      printHex(current_theme.accent, getRandomWelcomeMessage() + "\n\n");
     }
 
-    // Run animation test for 3 seconds using the loaded theme color
-    playThinkerAnimation(current_thinker, current_theme, 3);
+    // Generate horizontal line spanning exact terminal width
+    int width = getTerminalWidth();
+    std::string line = "";
+    for (int i = 0; i < width; ++i) {
+      line += "─";
+    }
 
-    printHex(current_theme.green, "Done thinking!\n");
+    // Top border line
+    printHex(current_theme.blue, line + "\n");
+
+    // Input prompt
+    printHex(current_theme.blue, "> ");
+    std::string user_input;
+    std::getline(std::cin, user_input);
+
+    // Bottom border line
+    printHex(current_theme.blue, line + "\n");
 
   } catch (const std::exception& e) {
-    std::cout << "\033[?25h"; // Ensure cursor is visible if an error occurs
+    std::cout << "\033[?25h";
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
   }
