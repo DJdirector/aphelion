@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <random>
+#include <iomanip>
 #include <nlohmann/json.hpp>
 
 #if defined(_WIN32)
@@ -43,6 +44,12 @@ struct THEME {
 struct THINKER {
   int speed_ms;
   std::vector<std::string> frames;
+};
+
+// Represents a single message in the conversation context
+struct ChatMessage {
+  std::string role;    // "user" or "assistant"
+  std::string content; // Text payload
 };
 
 void clearScreen() {
@@ -180,6 +187,29 @@ THINKER loadThinker(const std::string& thinker_name) {
   return thinker;
 }
 
+void saveSessionHistory(const std::string& session_filepath, const std::vector<ChatMessage>& chat_history) {
+  try {
+    if (!fs::exists("history")) {
+      fs::create_directory("history");
+    }
+
+    json history_json = json::array();
+    for (const auto& msg : chat_history) {
+      history_json.push_back({
+        {"role", msg.role},
+        {"content", msg.content}
+      });
+    }
+
+    std::ofstream out_file(session_filepath);
+    if (out_file.is_open()) {
+      out_file << history_json.dump(4);
+    }
+  } catch (...) {
+    // Quietly catch disk save exceptions to protect interactive thread
+  }
+}
+
 void playThinkerAnimation(const THINKER& thinker, const THEME& theme, int duration_seconds) {
   auto start_time = std::chrono::steady_clock::now();
   size_t frame_index = 0;
@@ -219,7 +249,14 @@ void renderHeader(const THEME& theme) {
   printHex(theme.alt_background, rule + "\n\n");
 }
 
-bool handleCommand(const std::string& input, SETTINGS& settings, THEME& current_theme, THINKER& current_thinker) {
+bool handleCommand(
+  const std::string& input,
+  SETTINGS& settings,
+  THEME& current_theme,
+  THINKER& current_thinker,
+  std::vector<ChatMessage>& chat_history,
+  const std::string& session_filepath
+) {
   std::stringstream ss(input);
   std::string command;
   ss >> command;
@@ -228,6 +265,8 @@ bool handleCommand(const std::string& input, SETTINGS& settings, THEME& current_
     printHex(current_theme.yellow, " Available Commands:\n");
     printHex(current_theme.foreground, "  /help           - Display this help menu\n");
     printHex(current_theme.foreground, "  /clear          - Clear the screen\n");
+    printHex(current_theme.foreground, "  /history        - View active conversation buffer\n");
+    printHex(current_theme.foreground, "  /reset          - Clear conversation history context\n");
     printHex(current_theme.foreground, "  /theme <name>   - Change active theme\n");
     printHex(current_theme.foreground, "  /thinker <name> - Change active thinker spinner\n");
     printHex(current_theme.foreground, "  /exit, /quit    - Exit the application\n\n");
@@ -240,6 +279,34 @@ bool handleCommand(const std::string& input, SETTINGS& settings, THEME& current_
     return true;
   }
 
+  if (command == "/history") {
+    if (chat_history.empty()) {
+      printHex(current_theme.yellow, " Conversation context buffer is currently empty.\n\n");
+      return true;
+    }
+
+    printHex(current_theme.yellow, " Active Context Buffer (" + std::to_string(chat_history.size()) + " messages):\n");
+    for (size_t i = 0; i < chat_history.size(); ++i) {
+      const auto& msg = chat_history[i];
+      if (msg.role == "user") {
+        printHex(current_theme.blue, "  [" + std::to_string(i + 1) + "] User: ");
+      } else {
+        printHex(current_theme.accent, "  [" + std::to_string(i + 1) + "] Assistant: ");
+      }
+      printHex(current_theme.foreground, msg.content + "\n");
+    }
+    std::cout << "\n";
+    return true;
+  }
+
+  if (command == "/reset") {
+    chat_history.clear();
+    saveSessionHistory(session_filepath, chat_history);
+    printHex(current_theme.green, " ✓ ");
+    printHex(current_theme.foreground, "Conversation history context cleared.\n\n");
+    return true;
+  }
+
   if (command == "/theme") {
     std::string new_theme;
     if (ss >> new_theme) {
@@ -248,7 +315,6 @@ bool handleCommand(const std::string& input, SETTINGS& settings, THEME& current_
         settings.theme = new_theme;
         saveSettings(settings);
 
-        // Print confirmation immediately rendered in the NEW theme colors
         printHex(current_theme.green, " ✓ ");
         printHex(current_theme.foreground, "Theme updated to: ");
         printHex(current_theme.accent, new_theme + "\n\n");
@@ -293,6 +359,15 @@ int main() {
     THEME current_theme = loadTheme(settings.theme);
     THINKER current_thinker = loadThinker(settings.thinker);
 
+    // Prepare timestamped session file path
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::stringstream ss_filename;
+    ss_filename << "history/session_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".json";
+    std::string session_filepath = ss_filename.str();
+
+    // In-Memory Chat History Context
+    std::vector<ChatMessage> chat_history;
+
     clearScreen();
     renderHeader(current_theme);
 
@@ -314,11 +389,21 @@ int main() {
 
       // Check if input is a local command (starts with /)
       if (user_input[0] == '/') {
-        handleCommand(user_input, settings, current_theme, current_thinker);
+        handleCommand(user_input, settings, current_theme, current_thinker, chat_history, session_filepath);
       } else {
-        // AI Prompt Handling (Simulated for now)
+        // 1. Store user prompt & sync to disk
+        chat_history.push_back({"user", user_input});
+        saveSessionHistory(session_filepath, chat_history);
+
+        // 2. Play spinner animation
         playThinkerAnimation(current_thinker, current_theme, 2);
-        printHex(current_theme.foreground, " [AI Response pending integration]: " + user_input + "\n\n");
+
+        // 3. Store assistant response & sync to disk
+        std::string mock_response = "[AI Response pending integration]: " + user_input;
+        chat_history.push_back({"assistant", mock_response});
+        saveSessionHistory(session_filepath, chat_history);
+
+        printHex(current_theme.foreground, " " + mock_response + "\n\n");
       }
     }
 
