@@ -46,10 +46,9 @@ struct THINKER {
   std::vector<std::string> frames;
 };
 
-// Represents a single message in the conversation context
 struct ChatMessage {
-  std::string role;    // "user" or "assistant"
-  std::string content; // Text payload
+  std::string role;    
+  std::string content; 
 };
 
 void clearScreen() {
@@ -89,6 +88,22 @@ void printHex(const std::string& hex, const std::string& text) {
   std::cout << "\033[38;2;" << r << ";" << g << ";" << b << "m"
             << text
             << "\033[0m";
+}
+
+// Helper function to auto-append .json extension if missing
+std::string sanitizeSessionFilename(std::string filename) {
+  if (filename.length() < 5 || filename.substr(filename.length() - 5) != ".json") {
+    filename += ".json";
+  }
+  return filename;
+}
+
+// Helper function to generate a new session filepath
+std::string createNewSessionFilepath() {
+  auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::stringstream ss_filename;
+  ss_filename << "history/session_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".json";
+  return ss_filename.str();
 }
 
 SETTINGS loadSettings(const std::string& file_path = "settings.json") {
@@ -206,7 +221,6 @@ void saveSessionHistory(const std::string& session_filepath, const std::vector<C
       out_file << history_json.dump(4);
     }
   } catch (...) {
-    // Quietly catch disk save exceptions to protect interactive thread
   }
 }
 
@@ -255,7 +269,7 @@ bool handleCommand(
   THEME& current_theme,
   THINKER& current_thinker,
   std::vector<ChatMessage>& chat_history,
-  const std::string& session_filepath
+  std::string& session_filepath
 ) {
   std::stringstream ss(input);
   std::string command;
@@ -266,7 +280,11 @@ bool handleCommand(
     printHex(current_theme.foreground, "  /help           - Display this help menu\n");
     printHex(current_theme.foreground, "  /clear          - Clear the screen\n");
     printHex(current_theme.foreground, "  /history        - View active conversation buffer\n");
-    printHex(current_theme.foreground, "  /reset          - Clear conversation history context\n");
+    printHex(current_theme.foreground, "  /reset          - Clear current conversation history\n");
+    printHex(current_theme.foreground, "  /new            - Start a brand new session context\n");
+    printHex(current_theme.foreground, "  /sessions       - List all saved conversation sessions\n");
+    printHex(current_theme.foreground, "  /load <file>    - Load a saved session\n");
+    printHex(current_theme.foreground, "  /delete <file>  - Delete a saved session\n");
     printHex(current_theme.foreground, "  /theme <name>   - Change active theme\n");
     printHex(current_theme.foreground, "  /thinker <name> - Change active thinker spinner\n");
     printHex(current_theme.foreground, "  /exit, /quit    - Exit the application\n\n");
@@ -304,6 +322,104 @@ bool handleCommand(
     saveSessionHistory(session_filepath, chat_history);
     printHex(current_theme.green, " ✓ ");
     printHex(current_theme.foreground, "Conversation history context cleared.\n\n");
+    return true;
+  }
+
+  if (command == "/new") {
+    chat_history.clear();
+    session_filepath = createNewSessionFilepath();
+    printHex(current_theme.green, " ✓ ");
+    printHex(current_theme.foreground, "Started new session context.\n\n");
+    return true;
+  }
+
+  if (command == "/sessions") {
+    printHex(current_theme.yellow, " Saved Sessions (history/):\n");
+    if (!fs::exists("history") || fs::is_empty("history")) {
+      printHex(current_theme.foreground, "  No saved sessions found.\n\n");
+      return true;
+    }
+    
+    for (const auto& entry : fs::directory_iterator("history")) {
+      if (entry.is_regular_file() && entry.path().extension() == ".json") {
+        std::string filename = entry.path().filename().string();
+        printHex(current_theme.foreground, "  • " + filename);
+        if ("history/" + filename == session_filepath) {
+          printHex(current_theme.accent, " (Active)");
+        }
+        std::cout << "\n";
+      }
+    }
+    std::cout << "\n";
+    return true;
+  }
+
+  if (command == "/load") {
+    std::string raw_filename;
+    if (ss >> raw_filename) {
+      std::string filename = sanitizeSessionFilename(raw_filename);
+      std::string target_path = "history/" + filename;
+      
+      if (!fs::exists(target_path)) {
+        printHex(current_theme.red, " ✗ Session not found. It might have gotten deleted.\n\n");
+        return true;
+      }
+
+      try {
+        std::ifstream file(target_path);
+        json session_data;
+        file >> session_data;
+
+        chat_history.clear();
+        for (const auto& item : session_data) {
+          chat_history.push_back({
+            item.value("role", "unknown"),
+            item.value("content", "")
+          });
+        }
+        
+        session_filepath = target_path;
+
+        printHex(current_theme.green, " ✓ ");
+        printHex(current_theme.foreground, "Loaded session: ");
+        printHex(current_theme.accent, filename + " (" + std::to_string(chat_history.size()) + " messages)\n\n");
+      } catch (const std::exception& e) {
+        printHex(current_theme.red, " ✗ Error parsing session file: " + std::string(e.what()) + "\n\n");
+      }
+    } else {
+      printHex(current_theme.red, " Usage: /load <filename>\n\n");
+    }
+    return true;
+  }
+
+  if (command == "/delete") {
+    std::string raw_filename;
+    if (ss >> raw_filename) {
+      std::string filename = sanitizeSessionFilename(raw_filename);
+      std::string target_path = "history/" + filename;
+      
+      if (!fs::exists(target_path)) {
+        printHex(current_theme.red, " ✗ Session not found. It might have gotten deleted.\n\n");
+        return true;
+      }
+
+      try {
+        fs::remove(target_path);
+        printHex(current_theme.green, " ✓ ");
+        printHex(current_theme.foreground, "Deleted session: ");
+        printHex(current_theme.accent, filename + "\n\n");
+
+        if (target_path == session_filepath) {
+          chat_history.clear();
+          session_filepath = createNewSessionFilepath();
+          printHex(current_theme.yellow, " Active session was deleted. Started a new fresh context.\n\n");
+        }
+      } catch (const std::exception& e) {
+        printHex(current_theme.red, " ✗ Error deleting session: " + std::string(e.what()) + "\n\n");
+      }
+    } else {
+      printHex(current_theme.red, " Usage: /delete <filename>\n\n");
+    }
     return true;
   }
 
@@ -359,13 +475,7 @@ int main() {
     THEME current_theme = loadTheme(settings.theme);
     THINKER current_thinker = loadThinker(settings.thinker);
 
-    // Prepare timestamped session file path
-    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    std::stringstream ss_filename;
-    ss_filename << "history/session_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".json";
-    std::string session_filepath = ss_filename.str();
-
-    // In-Memory Chat History Context
+    std::string session_filepath = createNewSessionFilepath();
     std::vector<ChatMessage> chat_history;
 
     clearScreen();
@@ -387,18 +497,14 @@ int main() {
         continue;
       }
 
-      // Check if input is a local command (starts with /)
       if (user_input[0] == '/') {
         handleCommand(user_input, settings, current_theme, current_thinker, chat_history, session_filepath);
       } else {
-        // 1. Store user prompt & sync to disk
         chat_history.push_back({"user", user_input});
         saveSessionHistory(session_filepath, chat_history);
 
-        // 2. Play spinner animation
         playThinkerAnimation(current_thinker, current_theme, 2);
 
-        // 3. Store assistant response & sync to disk
         std::string mock_response = "[AI Response pending integration]: " + user_input;
         chat_history.push_back({"assistant", mock_response});
         saveSessionHistory(session_filepath, chat_history);

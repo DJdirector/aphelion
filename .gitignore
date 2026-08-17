@@ -1,6 +1,9 @@
 # Ignore build output dir
 build/
 
+# Ignore history for testing
+history/
+
 # Ignore common IDE or system files
 .cmake/
 CMakeUserPresets.json
