@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <sstream>
 #include <thread>
 #include <chrono>
 #include <stdexcept>
@@ -179,20 +180,29 @@ THINKER loadThinker(const std::string& thinker_name) {
   return thinker;
 }
 
-std::string getRandomWelcomeMessage() {
-  std::vector<std::string> messages = {
-    "Any new ideas to explore?",
-    "Ready when you are.",
-    "What are we building today?",
-    "Let's get into it.",
-    "Standing by for instructions."
-  };
+void playThinkerAnimation(const THINKER& thinker, const THEME& theme, int duration_seconds) {
+  auto start_time = std::chrono::steady_clock::now();
+  size_t frame_index = 0;
 
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  std::uniform_int_distribution<size_t> dist(0, messages.size() - 1);
+  std::cout << "\033[?25l";
 
-  return messages[dist(gen)];
+  while (true) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::steady_clock::now() - start_time
+    ).count();
+
+    if (elapsed >= duration_seconds) {
+      break;
+    }
+
+    printHex(theme.accent, "\r│ " + thinker.frames[frame_index] + " Processing command...");
+    std::cout << std::flush;
+
+    frame_index = (frame_index + 1) % thinker.frames.size();
+    std::this_thread::sleep_for(std::chrono::milliseconds(thinker.speed_ms));
+  }
+
+  std::cout << "\r\033[K\033[?25h" << std::flush;
 }
 
 void renderHeader(const THEME& theme) {
@@ -200,6 +210,77 @@ void renderHeader(const THEME& theme) {
   printHex(theme.foreground, "APHELION ");
   printHex(theme.alt_background, "│ ");
   printHex(theme.yellow, "Pre-alpha\n");
+
+  int width = getTerminalWidth();
+  std::string rule = "";
+  for (int i = 0; i < width; ++i) {
+    rule += "─";
+  }
+  printHex(theme.alt_background, rule + "\n\n");
+}
+
+bool handleCommand(const std::string& input, SETTINGS& settings, THEME& current_theme, THINKER& current_thinker) {
+  std::stringstream ss(input);
+  std::string command;
+  ss >> command;
+
+  if (command == "/help") {
+    printHex(current_theme.yellow, " Available Commands:\n");
+    printHex(current_theme.foreground, "  /help           - Display this help menu\n");
+    printHex(current_theme.foreground, "  /clear          - Clear the screen\n");
+    printHex(current_theme.foreground, "  /theme <name>   - Change active theme\n");
+    printHex(current_theme.foreground, "  /thinker <name> - Change active thinker spinner\n");
+    printHex(current_theme.foreground, "  /exit, /quit    - Exit the application\n\n");
+    return true;
+  }
+
+  if (command == "/clear") {
+    clearScreen();
+    renderHeader(current_theme);
+    return true;
+  }
+
+  if (command == "/theme") {
+    std::string new_theme;
+    if (ss >> new_theme) {
+      try {
+        current_theme = loadTheme(new_theme);
+        settings.theme = new_theme;
+        saveSettings(settings);
+        printHex(current_theme.green, " Theme updated to: " + new_theme + "\n\n");
+      } catch (const std::exception& e) {
+        printHex(current_theme.red, " Error loading theme: " + std::string(e.what()) + "\n\n");
+      }
+    } else {
+      printHex(current_theme.red, " Usage: /theme <theme_name>\n\n");
+    }
+    return true;
+  }
+
+  if (command == "/thinker") {
+    std::string new_thinker;
+    if (ss >> new_thinker) {
+      try {
+        current_thinker = loadThinker(new_thinker);
+        settings.thinker = new_thinker;
+        saveSettings(settings);
+        printHex(current_theme.green, " Thinker updated to: " + new_thinker + "\n\n");
+      } catch (const std::exception& e) {
+        printHex(current_theme.red, " Error loading thinker: " + std::string(e.what()) + "\n\n");
+      }
+    } else {
+      printHex(current_theme.red, " Usage: /thinker <thinker_name>\n\n");
+    }
+    return true;
+  }
+
+  if (command == "/exit" || command == "/quit") {
+    printHex(current_theme.accent, " Goodbye!\n");
+    exit(0);
+  }
+
+  printHex(current_theme.red, " Unknown command: " + command + ". Type /help for options.\n\n");
+  return true;
 }
 
 int main() {
@@ -209,33 +290,33 @@ int main() {
     THINKER current_thinker = loadThinker(settings.thinker);
 
     clearScreen();
-
-    // 1. Render App Header
     renderHeader(current_theme);
 
-    // 2. Render Divider Rule
-    int width = getTerminalWidth();
-    std::string rule = "";
-    for (int i = 0; i < width; ++i) {
-      rule += "─";
-    }
-    printHex(current_theme.alt_background, rule + "\n\n");
-
-    // 3. Render Welcome Banner
     if (settings.first_run) {
-      printHex(current_theme.accent, " Hello there, I'm Aphelion. Let's get started!\n\n");
+      printHex(current_theme.accent, " Hello there, I'm Aphelion. Type /help to see local commands.\n\n");
       settings.first_run = false;
-      saveSettings(settings, "settings.json");
-    } else {
-      printHex(current_theme.foreground, " " + getRandomWelcomeMessage() + "\n\n");
+      saveSettings(settings);
     }
 
-    // 4. Clean Interactive Prompt
-    printHex(current_theme.accent, "│ ");
-    printHex(current_theme.blue, "❯ ");
-    
-    std::string user_input;
-    std::getline(std::cin, user_input);
+    // Interactive REPL Loop
+    while (true) {
+      printHex(current_theme.accent, "│ ");
+      printHex(current_theme.blue, "❯ ");
+      
+      std::string user_input;
+      if (!std::getline(std::cin, user_input) || user_input.empty()) {
+        continue;
+      }
+
+      // Check if input is a local command (starts with /)
+      if (user_input[0] == '/') {
+        handleCommand(user_input, settings, current_theme, current_thinker);
+      } else {
+        // AI Prompt Handling (Simulated for now)
+        playThinkerAnimation(current_thinker, current_theme, 2);
+        printHex(current_theme.foreground, " [AI Response pending integration]: " + user_input + "\n\n");
+      }
+    }
 
   } catch (const std::exception& e) {
     std::cout << "\033[?25h";
