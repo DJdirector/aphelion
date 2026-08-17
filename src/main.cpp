@@ -247,15 +247,19 @@ bool handleCommand(const std::string& input, SETTINGS& settings, THEME& current_
         current_theme = loadTheme(new_theme);
         settings.theme = new_theme;
         saveSettings(settings);
-        printHex(current_theme.green, " Theme updated to: " + new_theme + "\n\n");
+
+        // Print confirmation immediately rendered in the NEW theme colors
+        printHex(current_theme.green, " ✓ ");
+        printHex(current_theme.foreground, "Theme updated to: ");
+        printHex(current_theme.accent, new_theme + "\n\n");
       } catch (const std::exception& e) {
-        printHex(current_theme.red, " Error loading theme: " + std::string(e.what()) + "\n\n");
+        printHex(current_theme.red, " ✗ Error loading theme: " + std::string(e.what()) + "\n\n");
       }
     } else {
       printHex(current_theme.red, " Usage: /theme <theme_name>\n\n");
     }
     return true;
-  }
+  } 
 
   if (command == "/thinker") {
     std::string new_thinker;
@@ -301,7 +305,7 @@ int main() {
     // Interactive REPL Loop
     while (true) {
       printHex(current_theme.accent, "│ ");
-      printHex(current_theme.blue, "❯ ");
+      printHex(current_theme.accent, "❯ ");
       
       std::string user_input;
       if (!std::getline(std::cin, user_input) || user_input.empty()) {
