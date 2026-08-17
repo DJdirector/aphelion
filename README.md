@@ -42,7 +42,7 @@ Invoke the underlying build system to compile the source code into a runnable bi
 cmake --build build --target aphelion
 ```
 
-## How to runs
+## How to run
 
 Once compiled succesfully, your optimized executable file will be stored directy inside the generated build folder. Execute it from your terminal:
 
