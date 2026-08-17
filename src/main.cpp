@@ -60,7 +60,7 @@ int getTerminalWidth() {
     return w.ws_col;
   }
 #endif
-  return 80; // Fallback width
+  return 80;
 }
 
 void printHex(const std::string& hex, const std::string& text) {
@@ -181,11 +181,11 @@ THINKER loadThinker(const std::string& thinker_name) {
 
 std::string getRandomWelcomeMessage() {
   std::vector<std::string> messages = {
-    "☄ Any new ideas to explore?",
-    "☄ Lets jump in",
-    "☄ What should we focus on?",
-    "☄ Lets get into it",
-    "☄ What can I help with?"
+    "Any new ideas to explore?",
+    "Ready when you are.",
+    "What are we building today?",
+    "Let's get into it.",
+    "Standing by for instructions."
   };
 
   static std::random_device rd;
@@ -193,6 +193,13 @@ std::string getRandomWelcomeMessage() {
   std::uniform_int_distribution<size_t> dist(0, messages.size() - 1);
 
   return messages[dist(gen)];
+}
+
+void renderHeader(const THEME& theme) {
+  printHex(theme.accent, " ☄ ");
+  printHex(theme.foreground, "APHELION ");
+  printHex(theme.alt_background, "│ ");
+  printHex(theme.yellow, "Alpha\n");
 }
 
 int main() {
@@ -203,32 +210,32 @@ int main() {
 
     clearScreen();
 
+    // 1. Render App Header
+    renderHeader(current_theme);
+
+    // 2. Render Divider Rule
+    int width = getTerminalWidth();
+    std::string rule = "";
+    for (int i = 0; i < width; ++i) {
+      rule += "─";
+    }
+    printHex(current_theme.alt_background, rule + "\n\n");
+
+    // 3. Render Welcome Banner
     if (settings.first_run) {
-      printHex(current_theme.accent, "☄ Hello there, im aphelion. Lets get into it.\n\n");
-            
+      printHex(current_theme.accent, " Hello there, I'm Aphelion. Let's get started!\n\n");
       settings.first_run = false;
       saveSettings(settings, "settings.json");
     } else {
-      printHex(current_theme.accent, getRandomWelcomeMessage() + "\n\n");
+      printHex(current_theme.foreground, " " + getRandomWelcomeMessage() + "\n\n");
     }
 
-    // Generate horizontal line spanning exact terminal width
-    int width = getTerminalWidth();
-    std::string line = "";
-    for (int i = 0; i < width; ++i) {
-      line += "─";
-    }
-
-    // Top border line
-    printHex(current_theme.blue, line + "\n");
-
-    // Input prompt
-    printHex(current_theme.blue, "> ");
+    // 4. Clean Interactive Prompt
+    printHex(current_theme.accent, "│ ");
+    printHex(current_theme.blue, "❯ ");
+    
     std::string user_input;
     std::getline(std::cin, user_input);
-
-    // Bottom border line
-    printHex(current_theme.blue, line + "\n");
 
   } catch (const std::exception& e) {
     std::cout << "\033[?25h";
