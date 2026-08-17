@@ -199,7 +199,7 @@ void renderHeader(const THEME& theme) {
   printHex(theme.accent, " ☄ ");
   printHex(theme.foreground, "APHELION ");
   printHex(theme.alt_background, "│ ");
-  printHex(theme.yellow, "Alpha\n");
+  printHex(theme.yellow, "Pre-alpha\n");
 }
 
 int main() {
