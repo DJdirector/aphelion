@@ -1,7 +1,8 @@
 # Ignore build output dir
 build/
 
-# Ignore history for testing
+# Ignore settings.json and history for testing
+settings.json
 history/
 
 # Ignore common IDE or system files
