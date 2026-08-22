@@ -8,6 +8,7 @@ Before building this project, ensure you have the following utilities installed 
 * **CMake** (Version 3.15 or higher)
 * **C++ Compiler** (GCC, Clang, or MSVC supporting C++17)
 * **Build Tool** (Make or Ninja)
+* **libcurl** (development headers, used by the AI provider layer to talk to APIs)
 
 ## Project Structure
 
@@ -15,11 +16,29 @@ Before building this project, ensure you have the following utilities installed 
 aphelion/
 ├── CMakeLists.txt                       # Core CMake configuration script
 ├── README.md                            # Project documentation and setup guide
-├── settings.json                        # Aphelion config file
+├── settings.json                        # Aphelion config file (theme, thinker, AI provider)
 ├── src                                  # Aphelion source files
-│   └── main.cpp
+│   ├── main.cpp
+│   └── ai                               # AI provider abstraction layer (Gemini, OpenRouter, Ollama)
 ├── themes                               # Theme files
 └── thinkers                             # Thinker files
+```
+
+## AI Providers
+
+Aphelion talks to whichever AI provider is set in `settings.json` under `"ai"`. Three are supported:
+
+* **gemini** — Google Gemini via ai.dev
+* **openrouter** — OpenRouter
+* **ollama** — a local Ollama instance
+
+Each provider has its own `model` and, for Gemini/OpenRouter, an API key. Keys can be set directly as `api_key` in `settings.json`, but it's safer to leave that blank and export the corresponding environment variable instead (`GEMINI_API_KEY` / `OPENROUTER_API_KEY` by default — configurable via `api_key_env`).
+
+Switch provider or model at runtime from the REPL:
+
+```txt
+/provider <gemini|openrouter|ollama>
+/model <model_name>
 ```
 
 ## How to Build
