@@ -70,10 +70,15 @@ AIResponse GeminiProvider::sendMessage(const std::vector<Message>& history,
   std::string base = config_.base_url.empty()
                           ? "https://generativelanguage.googleapis.com"
                           : config_.base_url;
-  std::string url = base + "/v1beta/models/" + config_.model + ":generateContent?key=" + api_key_;
+  std::string url = base + "/v1beta/models/" + config_.model + ":generateContent";
 
   HttpClient client;
-  HttpResponse http_resp = client.post(url, {"Content-Type: application/json"}, body.dump());
+  HttpResponse http_resp = client.post(url,
+                                        {
+                                            "Content-Type: application/json",
+                                            "x-goog-api-key: " + api_key_,
+                                        },
+                                        body.dump());
 
   if (!http_resp.success) {
     result.error = "Gemini request failed: " +

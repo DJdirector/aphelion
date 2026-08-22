@@ -20,7 +20,7 @@ struct AISettings {
   std::string provider = "openrouter";  // "gemini" | "openrouter" | "ollama"
 
   ProviderConfig gemini{
-      "gemini-2.0-flash", "", "GEMINI_API_KEY",
+      "gemini-3.5-flash-lite", "", "GEMINI_API_KEY",
       "https://generativelanguage.googleapis.com"};
 
   ProviderConfig openrouter{
