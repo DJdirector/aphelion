@@ -553,6 +553,17 @@ bool handleCommand(
   return true;
 }
 
+// A short identity/system prompt sent to the model on every request so it
+// answers as Aphelion rather than surfacing the underlying provider/model.
+// Kept out of chat_history/session files on purpose - it's config, not a turn.
+std::string buildSystemPrompt() {
+  return "You are Aphelion, a free and open-source AI coding agent that runs in the "
+         "user's terminal. If asked who or what you are, answer as Aphelion - don't "
+         "reveal or speculate about the specific underlying model or provider powering "
+         "you unless the user explicitly asks about the implementation. Be concise and "
+         "direct, in keeping with a terminal tool.";
+}
+
 int main() {
   try {
     SETTINGS settings = loadSettings("settings.json");
@@ -600,7 +611,8 @@ int main() {
           printHex(current_theme.red, " ✗ No AI provider configured. Use /provider to set one.\n\n");
         } else {
           std::vector<ai::Message> ai_history;
-          ai_history.reserve(chat_history.size());
+          ai_history.reserve(chat_history.size() + 1);
+          ai_history.push_back({"system", buildSystemPrompt(), {}, ""});
           for (const auto& msg : chat_history) {
             ai_history.push_back({msg.role, msg.content, {}, ""});
           }
