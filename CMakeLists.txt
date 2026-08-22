@@ -17,8 +17,20 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
-# Define your main executable
-add_executable(aphelion src/main.cpp)
+# libcurl is used by the AI provider layer (src/ai/http_client.*) to talk to
+# Gemini, OpenRouter, and local Ollama instances over HTTP.
+find_package(CURL REQUIRED)
 
-# Link the header-only target (This bakes the JSON code directly into your binary)
-target_link_libraries(aphelion PRIVATE nlohmann_json::nlohmann_json)
+# Define your main executable
+add_executable(aphelion
+    src/main.cpp
+    src/ai/settings.cpp
+    src/ai/http_client.cpp
+    src/ai/gemini_provider.cpp
+    src/ai/openrouter_provider.cpp
+    src/ai/ollama_provider.cpp
+    src/ai/provider_factory.cpp
+)
+
+# Link the header-only JSON target and libcurl
+target_link_libraries(aphelion PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)

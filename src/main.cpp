@@ -9,7 +9,14 @@
 #include <filesystem>
 #include <random>
 #include <iomanip>
+#include <future>
+#include <memory>
 #include <nlohmann/json.hpp>
+
+#include "ai/settings.h"
+#include "ai/types.h"
+#include "ai/provider.h"
+#include "ai/provider_factory.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -25,6 +32,7 @@ struct SETTINGS {
   bool first_run;
   std::string theme;
   std::string thinker;
+  ai::AISettings ai;
 };
 
 struct THEME {
@@ -108,14 +116,16 @@ std::string createNewSessionFilepath() {
 
 SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   if (!fs::exists(file_path)) {
+    ai::AISettings default_ai;
     json default_config = {
       {"first_run", true},
       {"theme", "aphelion-dark"},
-      {"thinker", "default"}
+      {"thinker", "default"},
+      {"ai", ai::aiSettingsToJson(default_ai)}
     };
     std::ofstream out_file(file_path);
     out_file << default_config.dump(4);
-    return { true, "aphelion-dark", "default" };
+    return { true, "aphelion-dark", "default", default_ai };
   }
 
   std::ifstream file(file_path);
@@ -130,6 +140,9 @@ SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   settings.first_run = settings_data.value("first_run", true);
   settings.theme = settings_data.value("theme", "aphelion-dark");
   settings.thinker = settings_data.value("thinker", "default");
+  settings.ai = settings_data.contains("ai")
+                    ? ai::aiSettingsFromJson(settings_data["ai"])
+                    : ai::AISettings{};
 
   return settings;
 }
@@ -138,7 +151,8 @@ void saveSettings(const SETTINGS& settings, const std::string& file_path = "sett
   json settings_data = {
     {"first_run", settings.first_run},
     {"theme", settings.theme},
-    {"thinker", settings.thinker}
+    {"thinker", settings.thinker},
+    {"ai", ai::aiSettingsToJson(settings.ai)}
   };
 
   std::ofstream out_file(file_path);
@@ -249,6 +263,22 @@ void playThinkerAnimation(const THINKER& thinker, const THEME& theme, int durati
   std::cout << "\r\033[K\033[?25h" << std::flush;
 }
 
+// Same spinner, but spins until a pending AI response is ready instead of a
+// fixed duration - real network calls don't take a predictable 2 seconds.
+void playThinkerAnimationUntilReady(const THINKER& thinker, const THEME& theme,
+                                     std::future<ai::AIResponse>& pending) {
+  size_t frame_index = 0;
+  std::cout << "\033[?25l";
+
+  while (pending.wait_for(std::chrono::milliseconds(thinker.speed_ms)) != std::future_status::ready) {
+    printHex(theme.accent, "\r│ " + thinker.frames[frame_index] + " Processing command...");
+    std::cout << std::flush;
+    frame_index = (frame_index + 1) % thinker.frames.size();
+  }
+
+  std::cout << "\r\033[K\033[?25h" << std::flush;
+}
+
 void renderHeader(const THEME& theme) {
   printHex(theme.accent, " ☄ ");
   printHex(theme.foreground, "APHELION ");
@@ -269,7 +299,8 @@ bool handleCommand(
   THEME& current_theme,
   THINKER& current_thinker,
   std::vector<ChatMessage>& chat_history,
-  std::string& session_filepath
+  std::string& session_filepath,
+  std::unique_ptr<ai::AIProvider>& provider
 ) {
   std::stringstream ss(input);
   std::string command;
@@ -287,6 +318,8 @@ bool handleCommand(
     printHex(current_theme.foreground, "  /delete <file>  - Delete a saved session\n");
     printHex(current_theme.foreground, "  /theme <name>   - Change active theme\n");
     printHex(current_theme.foreground, "  /thinker <name> - Change active thinker spinner\n");
+    printHex(current_theme.foreground, "  /provider <name>- Switch AI provider (gemini, openrouter, ollama)\n");
+    printHex(current_theme.foreground, "  /model <name>   - Set the model for the active provider\n");
     printHex(current_theme.foreground, "  /exit, /quit    - Exit the application\n\n");
     return true;
   }
@@ -460,6 +493,57 @@ bool handleCommand(
     return true;
   }
 
+  if (command == "/provider") {
+    std::string new_provider;
+    if (ss >> new_provider) {
+      if (new_provider != "gemini" && new_provider != "openrouter" && new_provider != "ollama") {
+        printHex(current_theme.red, " ✗ Unknown provider. Available: gemini, openrouter, ollama\n\n");
+        return true;
+      }
+      std::string previous_provider = settings.ai.provider;
+      settings.ai.provider = new_provider;
+      try {
+        provider = ai::createProvider(settings.ai);
+        saveSettings(settings);
+        printHex(current_theme.green, " ✓ ");
+        printHex(current_theme.foreground, "AI provider switched to: ");
+        printHex(current_theme.accent, new_provider + "\n\n");
+      } catch (const std::exception& e) {
+        settings.ai.provider = previous_provider;
+        printHex(current_theme.red, " ✗ Error switching provider: " + std::string(e.what()) + "\n\n");
+      }
+    } else {
+      printHex(current_theme.red, " Usage: /provider <gemini|openrouter|ollama>\n\n");
+    }
+    return true;
+  }
+
+  if (command == "/model") {
+    std::string new_model;
+    if (ss >> new_model) {
+      if (settings.ai.provider == "gemini") {
+        settings.ai.gemini.model = new_model;
+      } else if (settings.ai.provider == "openrouter") {
+        settings.ai.openrouter.model = new_model;
+      } else {
+        settings.ai.ollama.model = new_model;
+      }
+
+      try {
+        provider = ai::createProvider(settings.ai);
+        saveSettings(settings);
+        printHex(current_theme.green, " ✓ ");
+        printHex(current_theme.foreground, "Model for " + settings.ai.provider + " set to: ");
+        printHex(current_theme.accent, new_model + "\n\n");
+      } catch (const std::exception& e) {
+        printHex(current_theme.red, " ✗ Error updating model: " + std::string(e.what()) + "\n\n");
+      }
+    } else {
+      printHex(current_theme.red, " Usage: /model <model_name>\n\n");
+    }
+    return true;
+  }
+
   if (command == "/exit" || command == "/quit") {
     printHex(current_theme.accent, " Goodbye!\n");
     exit(0);
@@ -477,6 +561,15 @@ int main() {
 
     std::string session_filepath = createNewSessionFilepath();
     std::vector<ChatMessage> chat_history;
+
+    std::unique_ptr<ai::AIProvider> provider;
+    try {
+      provider = ai::createProvider(settings.ai);
+    } catch (const std::exception& e) {
+      // Don't hard-fail startup over a bad provider config; let the user fix it
+      // with /provider once the REPL is up.
+      std::cerr << "Warning: " << e.what() << std::endl;
+    }
 
     clearScreen();
     renderHeader(current_theme);
@@ -498,18 +591,43 @@ int main() {
       }
 
       if (user_input[0] == '/') {
-        handleCommand(user_input, settings, current_theme, current_thinker, chat_history, session_filepath);
+        handleCommand(user_input, settings, current_theme, current_thinker, chat_history, session_filepath, provider);
       } else {
         chat_history.push_back({"user", user_input});
         saveSessionHistory(session_filepath, chat_history);
 
-        playThinkerAnimation(current_thinker, current_theme, 2);
+        if (!provider) {
+          printHex(current_theme.red, " ✗ No AI provider configured. Use /provider to set one.\n\n");
+        } else {
+          std::vector<ai::Message> ai_history;
+          ai_history.reserve(chat_history.size());
+          for (const auto& msg : chat_history) {
+            ai_history.push_back({msg.role, msg.content, {}, ""});
+          }
 
-        std::string mock_response = "[AI Response pending integration]: " + user_input;
-        chat_history.push_back({"assistant", mock_response});
-        saveSessionHistory(session_filepath, chat_history);
+          std::future<ai::AIResponse> response_future = std::async(std::launch::async, [&]() {
+            return provider->sendMessage(ai_history);
+          });
+          playThinkerAnimationUntilReady(current_thinker, current_theme, response_future);
+          ai::AIResponse response = response_future.get();
 
-        printHex(current_theme.foreground, " " + mock_response + "\n\n");
+          if (response.ok) {
+            chat_history.push_back({"assistant", response.content});
+            saveSessionHistory(session_filepath, chat_history);
+
+            printHex(current_theme.foreground, " " + response.content + "\n");
+            if (!response.tool_calls.empty()) {
+              printHex(current_theme.yellow,
+                       " (" + std::to_string(response.tool_calls.size()) +
+                       " tool call(s) requested - tool execution isn't implemented yet)\n");
+            }
+            std::cout << "\n";
+          } else {
+            chat_history.pop_back();  // don't keep a user turn that got no reply
+            saveSessionHistory(session_filepath, chat_history);
+            printHex(current_theme.red, " ✗ AI error: " + response.error + "\n\n");
+          }
+        }
       }
     }
 
