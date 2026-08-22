@@ -98,6 +98,165 @@ void printHex(const std::string& hex, const std::string& text) {
             << "\033[0m";
 }
 
+// Same hex -> truecolor conversion as printHex, but returns just the
+// "set foreground" escape sequence with no trailing text or reset - used by
+// the markdown renderer, which needs to toggle bold/italic/color mid-line
+// without stomping the surrounding style each time.
+std::string ansiFg(const std::string& hex) {
+  std::string clean_hex = hex;
+  if (!clean_hex.empty() && clean_hex[0] == '#') {
+    clean_hex.erase(0, 1);
+  }
+  if (clean_hex.length() < 6) {
+    return "";
+  }
+  int r = std::stoi(clean_hex.substr(0, 2), nullptr, 16);
+  int g = std::stoi(clean_hex.substr(2, 2), nullptr, 16);
+  int b = std::stoi(clean_hex.substr(4, 2), nullptr, 16);
+
+  std::ostringstream oss;
+  oss << "\033[38;2;" << r << ";" << g << ";" << b << "m";
+  return oss.str();
+}
+
+// Same as ansiFg but sets the background - used to give fenced code blocks
+// an actual highlighted box instead of just colored text, since
+// alt_background is meant to be used as a background, not foreground text
+// (its whole purpose is being close to the terminal background, which makes
+// it nearly unreadable as foreground text).
+std::string ansiBg(const std::string& hex) {
+  std::string clean_hex = hex;
+  if (!clean_hex.empty() && clean_hex[0] == '#') {
+    clean_hex.erase(0, 1);
+  }
+  if (clean_hex.length() < 6) {
+    return "";
+  }
+  int r = std::stoi(clean_hex.substr(0, 2), nullptr, 16);
+  int g = std::stoi(clean_hex.substr(2, 2), nullptr, 16);
+  int b = std::stoi(clean_hex.substr(4, 2), nullptr, 16);
+
+  std::ostringstream oss;
+  oss << "\033[48;2;" << r << ";" << g << ";" << b << "m";
+  return oss.str();
+}
+
+// Renders a single line's inline markdown: **bold**, *italic*/_italic_, and
+// `inline code`. Deliberately hand-rolled instead of std::regex - libstdc++'s
+// regex has no lookbehind, and this is simple enough not to need it.
+void printInlineFormatted(const std::string& line, const THEME& theme) {
+  std::cout << ansiFg(theme.foreground);
+  bool bold = false;
+  bool italic = false;
+  size_t i = 0;
+  const size_t n = line.size();
+
+  while (i < n) {
+    if (i + 1 < n && line[i] == '*' && line[i + 1] == '*') {
+      bold = !bold;
+      std::cout << (bold ? "\033[1m" : "\033[22m");
+      i += 2;
+      continue;
+    }
+    if (line[i] == '*' || line[i] == '_') {
+      italic = !italic;
+      std::cout << (italic ? "\033[3m" : "\033[23m");
+      i += 1;
+      continue;
+    }
+    if (line[i] == '`') {
+      size_t end = line.find('`', i + 1);
+      if (end != std::string::npos) {
+        std::cout << ansiBg(theme.alt_background) << ansiFg(theme.yellow) << " "
+                   << line.substr(i + 1, end - i - 1) << " "
+                   << "\033[49m" << ansiFg(theme.foreground);
+        i = end + 1;
+        continue;
+      }
+    }
+    std::cout << line[i];
+    ++i;
+  }
+
+  std::cout << "\033[0m";
+}
+
+// Line-oriented markdown renderer for AI responses: headers (#/##/###),
+// fenced code blocks, bullet lists, and inline formatting via
+// printInlineFormatted above. Not a full CommonMark implementation - just
+// enough to make typical LLM output (headers, bold, code) readable in a
+// terminal instead of showing raw '#'/'**'/backtick characters.
+void renderMarkdown(const std::string& text, const THEME& theme) {
+  std::istringstream iss(text);
+  std::string line;
+  bool in_code_block = false;
+
+  while (std::getline(iss, line)) {
+    size_t first = line.find_first_not_of(" \t");
+    std::string stripped = (first == std::string::npos) ? "" : line.substr(first);
+
+    if (stripped.rfind("```", 0) == 0) {
+      bool opening = !in_code_block;
+      in_code_block = !in_code_block;
+      int width = getTerminalWidth();
+      std::string blank_row(width, ' ');
+
+      if (opening) {
+        // Blank padding row above the label, so the box doesn't look clipped
+        // at the top - mirrors the blank row the closing fence already gives
+        // us for free at the bottom (see below).
+        std::cout << ansiBg(theme.alt_background) << blank_row << "\033[0m\n";
+        std::string lang = stripped.substr(3);
+        std::string label = "  " + (lang.empty() ? "code" : lang);
+        if (static_cast<int>(label.size()) < width) {
+          label += std::string(width - label.size(), ' ');
+        }
+        std::cout << ansiBg(theme.alt_background) << ansiFg(theme.accent) << label << "\033[0m\n";
+      } else {
+        // Closing fence: just the blank padding row at the bottom.
+        std::cout << ansiBg(theme.alt_background) << blank_row << "\033[0m\n";
+      }
+      continue;
+    }
+
+    if (in_code_block) {
+      std::string content = "  " + line;
+      int width = getTerminalWidth();
+      if (static_cast<int>(content.size()) < width) {
+        content += std::string(width - content.size(), ' ');
+      }
+      std::cout << ansiBg(theme.alt_background) << ansiFg(theme.green) << content << "\033[0m\n";
+      continue;
+    }
+
+    size_t header_level = 0;
+    while (header_level < stripped.size() && stripped[header_level] == '#') {
+      ++header_level;
+    }
+    if (header_level > 0 && header_level <= 6 && header_level < stripped.size() &&
+        stripped[header_level] == ' ') {
+      std::string header_text = stripped.substr(header_level + 1);
+      std::cout << "\033[1m" << ansiFg(theme.accent) << " " << header_text << "\033[0m\n";
+      continue;
+    }
+
+    if (stripped.rfind("- ", 0) == 0 || stripped.rfind("* ", 0) == 0) {
+      printHex(theme.accent, "  • ");
+      printInlineFormatted(stripped.substr(2), theme);
+      std::cout << "\n";
+      continue;
+    }
+
+    if (stripped.empty()) {
+      std::cout << "\n";
+      continue;
+    }
+
+    printInlineFormatted(line, theme);
+    std::cout << "\n";
+  }
+}
+
 // Helper function to auto-append .json extension if missing
 std::string sanitizeSessionFilename(std::string filename) {
   if (filename.length() < 5 || filename.substr(filename.length() - 5) != ".json") {
@@ -561,7 +720,10 @@ std::string buildSystemPrompt() {
          "user's terminal. If asked who or what you are, answer as Aphelion - don't "
          "reveal or speculate about the specific underlying model or provider powering "
          "you unless the user explicitly asks about the implementation. Be concise and "
-         "direct, in keeping with a terminal tool.";
+         "direct, in keeping with a terminal tool. You may use standard Markdown - "
+         "headers (#, ##, ###), **bold**, *italic*, `inline code`, fenced code blocks, "
+         "and simple '- ' bullet lists - it is rendered directly in the terminal. Avoid "
+         "tables, images, nested/numbered lists, and links, which do not render well here.";
 }
 
 int main() {
@@ -627,7 +789,7 @@ int main() {
             chat_history.push_back({"assistant", response.content});
             saveSessionHistory(session_filepath, chat_history);
 
-            printHex(current_theme.foreground, " " + response.content + "\n");
+            renderMarkdown(response.content, current_theme);
             if (!response.tool_calls.empty()) {
               printHex(current_theme.yellow,
                        " (" + std::to_string(response.tool_calls.size()) +
