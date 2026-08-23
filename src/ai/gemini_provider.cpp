@@ -130,12 +130,17 @@ AIResponse GeminiProvider::sendMessage(const std::vector<Message>& history,
   std::string url = base + "/v1beta/models/" + config_.model + ":generateContent";
 
   HttpClient client;
+  // Gemini's generateContent isn't streaming - it computes the whole response
+  // (including "thinking" tokens for reasoning models) silently, then sends it
+  // all at once. A big context + complex prompt can genuinely take a few
+  // minutes with nothing arriving on the wire in the meantime, so this needs
+  // real headroom rather than a typical request timeout.
   HttpResponse http_resp = client.post(url,
                                         {
                                             "Content-Type: application/json",
                                             "x-goog-api-key: " + api_key_,
                                         },
-                                        body.dump());
+                                        body.dump(), 300);
 
   if (!http_resp.success) {
     // The response body (when present) has the real diagnostic - a transport-level

@@ -72,6 +72,8 @@ AIResponse OpenRouterProvider::sendMessage(const std::vector<Message>& history,
   std::string url = base + "/chat/completions";
 
   HttpClient client;
+  // Same reasoning as Gemini: no streaming, so a big/slow model response has
+  // to complete within a single request. Give it real headroom.
   HttpResponse http_resp = client.post(url,
                                         {
                                             "Content-Type: application/json",
@@ -79,7 +81,7 @@ AIResponse OpenRouterProvider::sendMessage(const std::vector<Message>& history,
                                             "HTTP-Referer: https://github.com/aphelion-cli",
                                             "X-Title: Aphelion",
                                         },
-                                        body.dump());
+                                        body.dump(), 300);
 
   if (!http_resp.success) {
     std::string detail = http_resp.body;
