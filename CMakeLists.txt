@@ -24,6 +24,9 @@ find_package(CURL REQUIRED)
 # Define your main executable
 add_executable(aphelion
     src/main.cpp
+    src/tools/scan.cpp
+    src/tools/scan_tool.cpp
+    src/tools/registry.cpp
     src/ai/settings.cpp
     src/ai/http_client.cpp
     src/ai/gemini_provider.cpp

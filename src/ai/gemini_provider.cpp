@@ -36,6 +36,18 @@ AIResponse GeminiProvider::sendMessage(const std::vector<Message>& history,
   json contents = json::array();
   std::string system_prompt;
 
+  // Consecutive "tool" messages (results of multiple calls the model made in
+  // one turn) must be batched into a single "user" turn with multiple
+  // functionResponse parts - Gemini rejects two consecutive same-role turns,
+  // which is exactly what you'd get sending one turn per tool result.
+  json pending_tool_parts = json::array();
+  auto flushToolResponses = [&]() {
+    if (!pending_tool_parts.empty()) {
+      contents.push_back({{"role", "user"}, {"parts", pending_tool_parts}});
+      pending_tool_parts = json::array();
+    }
+  };
+
   for (const auto& msg : history) {
     if (msg.role == "system") {
       // Gemini takes at most one system instruction; concatenate if there's more than one.
@@ -43,11 +55,56 @@ AIResponse GeminiProvider::sendMessage(const std::vector<Message>& history,
       system_prompt += msg.content;
       continue;
     }
+
+    if (msg.role == "tool") {
+      json response_part = {
+          {"functionResponse",
+           {
+               {"name", msg.tool_name.empty() ? "tool" : msg.tool_name},
+               {"response", {{"content", msg.content}}},
+           }},
+      };
+      if (!msg.tool_call_id.empty()) {
+        response_part["functionResponse"]["id"] = msg.tool_call_id;
+      }
+      pending_tool_parts.push_back(response_part);
+      continue;
+    }
+
+    flushToolResponses();
+
+    if (msg.role == "assistant" && !msg.tool_calls.empty()) {
+      json parts = json::array();
+      if (!msg.content.empty()) {
+        parts.push_back({{"text", msg.content}});
+      }
+      for (const auto& tc : msg.tool_calls) {
+        json call_part = {{"functionCall", {{"name", tc.name}, {"args", tc.arguments}}}};
+        if (!tc.id.empty()) {
+          call_part["functionCall"]["id"] = tc.id;
+        }
+        // thoughtSignature is a SIBLING of functionCall on the Part object, not
+        // nested inside it, and must be echoed back byte-for-byte or Gemini 3+
+        // rejects the request with a 400. Only present on the first call when
+        // the model made several in parallel. Wire key is camelCase
+        // "thoughtSignature" - the current ai.google.dev docs use this; an
+        // older "(Legacy)" page shows snake_case "thought_signature", which
+        // does NOT work against the live generateContent endpoint.
+        if (!tc.thought_signature.empty()) {
+          call_part["thoughtSignature"] = tc.thought_signature;
+        }
+        parts.push_back(call_part);
+      }
+      contents.push_back({{"role", "model"}, {"parts", parts}});
+      continue;
+    }
+
     contents.push_back({
         {"role", mapRoleToGemini(msg.role)},
         {"parts", json::array({json{{"text", msg.content}}})},
     });
   }
+  flushToolResponses();
 
   json body = {{"contents", contents}};
 
@@ -81,8 +138,23 @@ AIResponse GeminiProvider::sendMessage(const std::vector<Message>& history,
                                         body.dump());
 
   if (!http_resp.success) {
-    result.error = "Gemini request failed: " +
-                    (http_resp.error.empty() ? http_resp.body : http_resp.error);
+    // The response body (when present) has the real diagnostic - a transport-level
+    // failure (no connection, timeout) has an empty body and only http_resp.error
+    // to go on, but an HTTP-level failure (4xx/5xx) has a JSON body explaining
+    // exactly what was wrong with the request, which is far more useful than the
+    // generic "HTTP 400" status string.
+    std::string detail = http_resp.body;
+    try {
+      json err_json = json::parse(http_resp.body);
+      if (err_json.contains("error")) {
+        detail = err_json["error"].value("message", http_resp.body);
+      }
+    } catch (...) {
+      // Body wasn't JSON (or was empty) - fall through with whatever we have.
+    }
+    if (detail.empty()) detail = http_resp.error;
+    result.error = "Gemini request failed (HTTP " + std::to_string(http_resp.status_code) +
+                    "): " + detail;
     return result;
   }
 
@@ -107,8 +179,13 @@ AIResponse GeminiProvider::sendMessage(const std::vector<Message>& history,
           result.content += part["text"].get<std::string>();
         } else if (part.contains("functionCall")) {
           ToolCall call;
+          call.id = part["functionCall"].value("id", "");
           call.name = part["functionCall"].value("name", "");
           call.arguments = part["functionCall"].value("args", json::object());
+          // Sibling of functionCall on the Part object, not nested inside it.
+          // Wire key is camelCase "thoughtSignature" (current API), not the
+          // snake_case "thought_signature" shown on Google's legacy docs page.
+          call.thought_signature = part.value("thoughtSignature", "");
           result.tool_calls.push_back(call);
         }
       }

@@ -17,6 +17,8 @@
 #include "ai/types.h"
 #include "ai/provider.h"
 #include "ai/provider_factory.h"
+#include "tools/scan.h"
+#include "tools/registry.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -55,8 +57,11 @@ struct THINKER {
 };
 
 struct ChatMessage {
-  std::string role;    
-  std::string content; 
+  std::string role;
+  std::string content;
+  std::vector<ai::ToolCall> tool_calls;  // set on "assistant" messages that called tools
+  std::string tool_call_id;              // set on "tool" messages: which call this answers
+  std::string tool_name;                 // set on "tool" messages: which tool produced this
 };
 
 void clearScreen() {
@@ -273,6 +278,14 @@ std::string createNewSessionFilepath() {
   return ss_filename.str();
 }
 
+// Same convention, for saved project scans.
+std::string createScanFilepath() {
+  auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::stringstream ss_filename;
+  ss_filename << "history/scan_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".txt";
+  return ss_filename.str();
+}
+
 SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   if (!fs::exists(file_path)) {
     ai::AISettings default_ai;
@@ -383,10 +396,24 @@ void saveSessionHistory(const std::string& session_filepath, const std::vector<C
 
     json history_json = json::array();
     for (const auto& msg : chat_history) {
-      history_json.push_back({
-        {"role", msg.role},
-        {"content", msg.content}
-      });
+      json entry = {{"role", msg.role}, {"content", msg.content}};
+
+      if (!msg.tool_calls.empty()) {
+        json calls = json::array();
+        for (const auto& tc : msg.tool_calls) {
+          calls.push_back({{"id", tc.id}, {"name", tc.name}, {"arguments", tc.arguments},
+                            {"thought_signature", tc.thought_signature}});
+        }
+        entry["tool_calls"] = calls;
+      }
+      if (!msg.tool_call_id.empty()) {
+        entry["tool_call_id"] = msg.tool_call_id;
+      }
+      if (!msg.tool_name.empty()) {
+        entry["tool_name"] = msg.tool_name;
+      }
+
+      history_json.push_back(entry);
     }
 
     std::ofstream out_file(session_filepath);
@@ -479,6 +506,7 @@ bool handleCommand(
     printHex(current_theme.foreground, "  /thinker <name> - Change active thinker spinner\n");
     printHex(current_theme.foreground, "  /provider <name>- Switch AI provider (gemini, openrouter, ollama)\n");
     printHex(current_theme.foreground, "  /model <name>   - Set the model for the active provider\n");
+    printHex(current_theme.foreground, "  /scan           - Locally scan the project and add it to context\n");
     printHex(current_theme.foreground, "  /exit, /quit    - Exit the application\n\n");
     return true;
   }
@@ -500,10 +528,18 @@ bool handleCommand(
       const auto& msg = chat_history[i];
       if (msg.role == "user") {
         printHex(current_theme.blue, "  [" + std::to_string(i + 1) + "] User: ");
+        printHex(current_theme.foreground, msg.content + "\n");
+      } else if (msg.role == "tool") {
+        std::string label = msg.tool_name.empty() ? "tool" : msg.tool_name;
+        printHex(current_theme.green, "  [" + std::to_string(i + 1) + "] Tool result (" + label + "): ");
+        printHex(current_theme.foreground, msg.content + "\n");
       } else {
         printHex(current_theme.accent, "  [" + std::to_string(i + 1) + "] Assistant: ");
+        printHex(current_theme.foreground, msg.content + "\n");
+        for (const auto& tc : msg.tool_calls) {
+          printHex(current_theme.yellow, "      ⚙ called " + tc.name + "(" + tc.arguments.dump() + ")\n");
+        }
       }
-      printHex(current_theme.foreground, msg.content + "\n");
     }
     std::cout << "\n";
     return true;
@@ -564,10 +600,22 @@ bool handleCommand(
 
         chat_history.clear();
         for (const auto& item : session_data) {
-          chat_history.push_back({
-            item.value("role", "unknown"),
-            item.value("content", "")
-          });
+          ChatMessage msg;
+          msg.role = item.value("role", "unknown");
+          msg.content = item.value("content", "");
+          msg.tool_call_id = item.value("tool_call_id", "");
+          msg.tool_name = item.value("tool_name", "");
+          if (item.contains("tool_calls") && item["tool_calls"].is_array()) {
+            for (const auto& tc_json : item["tool_calls"]) {
+              ai::ToolCall tc;
+              tc.id = tc_json.value("id", "");
+              tc.name = tc_json.value("name", "");
+              tc.arguments = tc_json.value("arguments", json::object());
+              tc.thought_signature = tc_json.value("thought_signature", "");
+              msg.tool_calls.push_back(tc);
+            }
+          }
+          chat_history.push_back(msg);
         }
         
         session_filepath = target_path;
@@ -703,6 +751,45 @@ bool handleCommand(
     return true;
   }
 
+  if (command == "/scan") {
+    printHex(current_theme.accent, " Scanning project...\n");
+
+    scan::ScanResult result = scan::scanProject();
+
+    std::string scan_filepath = createScanFilepath();
+    std::ofstream out(scan_filepath);
+    if (out.is_open()) {
+      out << result.digest;
+    }
+
+    double approx_tokens = static_cast<double>(result.total_bytes) / 4.0;
+
+    printHex(current_theme.green, " ✓ ");
+    printHex(current_theme.foreground,
+             "Scanned " + std::to_string(result.files_included) + " files (" +
+             std::to_string(result.total_bytes) + " bytes, ~" +
+             std::to_string(static_cast<long>(approx_tokens)) + " tokens)\n");
+
+    if (result.files_skipped_size > 0 || result.files_skipped_binary > 0) {
+      printHex(current_theme.yellow,
+               " (" + std::to_string(result.files_skipped_size) + " skipped: too large, " +
+               std::to_string(result.files_skipped_binary) + " skipped: binary)\n");
+    }
+    if (result.truncated) {
+      printHex(current_theme.yellow, " Digest truncated - project is larger than the scan limit.\n");
+    }
+
+    printHex(current_theme.foreground, " Saved to: ");
+    printHex(current_theme.accent, scan_filepath + "\n");
+
+    chat_history.push_back({"user", result.digest});
+    saveSessionHistory(session_filepath, chat_history);
+
+    printHex(current_theme.foreground,
+             " Added to conversation context - your next message will include it.\n\n");
+    return true;
+  }
+
   if (command == "/exit" || command == "/quit") {
     printHex(current_theme.accent, " Goodbye!\n");
     exit(0);
@@ -723,7 +810,13 @@ std::string buildSystemPrompt() {
          "direct, in keeping with a terminal tool. You may use standard Markdown - "
          "headers (#, ##, ###), **bold**, *italic*, `inline code`, fenced code blocks, "
          "and simple '- ' bullet lists - it is rendered directly in the terminal. Avoid "
-         "tables, images, nested/numbered lists, and links, which do not render well here.";
+         "tables, images, nested/numbered lists, and links, which do not render well here. "
+         "You have a scan_project tool available: it returns a read-only text digest "
+         "(file tree + contents) of the user's project. Call it when you genuinely need to "
+         "see the codebase to answer - e.g. the user asks about 'this project', 'the "
+         "codebase', or wants you to review/explain/modify files you haven't seen yet. Don't "
+         "call it speculatively or more than once per turn unless the result truly didn't "
+         "answer what you needed - the user may be on a metered API plan.";
 }
 
 int main() {
@@ -766,40 +859,88 @@ int main() {
       if (user_input[0] == '/') {
         handleCommand(user_input, settings, current_theme, current_thinker, chat_history, session_filepath, provider);
       } else {
-        chat_history.push_back({"user", user_input});
+        chat_history.push_back({"user", user_input, {}, "", ""});
         saveSessionHistory(session_filepath, chat_history);
 
         if (!provider) {
           printHex(current_theme.red, " ✗ No AI provider configured. Use /provider to set one.\n\n");
         } else {
-          std::vector<ai::Message> ai_history;
-          ai_history.reserve(chat_history.size() + 1);
-          ai_history.push_back({"system", buildSystemPrompt(), {}, ""});
-          for (const auto& msg : chat_history) {
-            ai_history.push_back({msg.role, msg.content, {}, ""});
-          }
+          std::vector<ai::ToolDefinition> tool_defs = tools::availableTools();
+          const int max_tool_iterations = 5;  // guards against a runaway tool-call loop
+          bool turn_done = false;
 
-          std::future<ai::AIResponse> response_future = std::async(std::launch::async, [&]() {
-            return provider->sendMessage(ai_history);
-          });
-          playThinkerAnimationUntilReady(current_thinker, current_theme, response_future);
-          ai::AIResponse response = response_future.get();
+          for (int iteration = 0; !turn_done && iteration < max_tool_iterations; ++iteration) {
+            std::vector<ai::Message> ai_history;
+            ai_history.reserve(chat_history.size() + 1);
 
-          if (response.ok) {
-            chat_history.push_back({"assistant", response.content});
-            saveSessionHistory(session_filepath, chat_history);
+            ai::Message sys_msg;
+            sys_msg.role = "system";
+            sys_msg.content = buildSystemPrompt();
+            ai_history.push_back(sys_msg);
 
-            renderMarkdown(response.content, current_theme);
-            if (!response.tool_calls.empty()) {
-              printHex(current_theme.yellow,
-                       " (" + std::to_string(response.tool_calls.size()) +
-                       " tool call(s) requested - tool execution isn't implemented yet)\n");
+            for (const auto& msg : chat_history) {
+              ai::Message m;
+              m.role = msg.role;
+              m.content = msg.content;
+              m.tool_calls = msg.tool_calls;
+              m.tool_call_id = msg.tool_call_id;
+              m.tool_name = msg.tool_name;
+              ai_history.push_back(m);
             }
-            std::cout << "\n";
-          } else {
-            chat_history.pop_back();  // don't keep a user turn that got no reply
+
+            std::future<ai::AIResponse> response_future = std::async(std::launch::async, [&]() {
+              return provider->sendMessage(ai_history, tool_defs);
+            });
+            playThinkerAnimationUntilReady(current_thinker, current_theme, response_future);
+            ai::AIResponse response = response_future.get();
+
+            if (!response.ok) {
+              if (iteration == 0) {
+                chat_history.pop_back();  // don't keep a user turn that got no reply at all
+              }
+              saveSessionHistory(session_filepath, chat_history);
+              printHex(current_theme.red, " ✗ AI error: " + response.error + "\n\n");
+              turn_done = true;
+              break;
+            }
+
+            ChatMessage assistant_msg;
+            assistant_msg.role = "assistant";
+            assistant_msg.content = response.content;
+            assistant_msg.tool_calls = response.tool_calls;
+            chat_history.push_back(assistant_msg);
             saveSessionHistory(session_filepath, chat_history);
-            printHex(current_theme.red, " ✗ AI error: " + response.error + "\n\n");
+
+            if (!response.content.empty()) {
+              renderMarkdown(response.content, current_theme);
+            }
+
+            if (response.tool_calls.empty()) {
+              std::cout << "\n";
+              turn_done = true;
+              break;
+            }
+
+            for (const auto& call : response.tool_calls) {
+              printHex(current_theme.yellow, " ⚙ ");
+              printHex(current_theme.foreground, "Running tool: ");
+              printHex(current_theme.accent, call.name + "\n");
+
+              ai::Message tool_result = tools::executeToolCall(call);
+
+              ChatMessage tool_msg;
+              tool_msg.role = "tool";
+              tool_msg.content = tool_result.content;
+              tool_msg.tool_call_id = tool_result.tool_call_id;
+              tool_msg.tool_name = tool_result.tool_name;
+              chat_history.push_back(tool_msg);
+            }
+            saveSessionHistory(session_filepath, chat_history);
+
+            if (iteration == max_tool_iterations - 1) {
+              printHex(current_theme.yellow,
+                       " (Reached the max tool-call iterations for this turn - stopping here.)\n\n");
+            }
           }
         }
       }

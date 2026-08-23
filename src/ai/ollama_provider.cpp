@@ -16,7 +16,17 @@ AIResponse OllamaProvider::sendMessage(const std::vector<Message>& history,
 
   json messages = json::array();
   for (const auto& msg : history) {
-    messages.push_back({{"role", msg.role}, {"content", msg.content}});
+    json m = {{"role", msg.role}, {"content", msg.content}};
+
+    if (!msg.tool_calls.empty()) {
+      json calls = json::array();
+      for (const auto& tc : msg.tool_calls) {
+        calls.push_back({{"function", {{"name", tc.name}, {"arguments", tc.arguments}}}});
+      }
+      m["tool_calls"] = calls;
+    }
+
+    messages.push_back(m);
   }
 
   json body = {{"model", config_.model}, {"messages", messages}, {"stream", false}};
@@ -46,9 +56,17 @@ AIResponse OllamaProvider::sendMessage(const std::vector<Message>& history,
   HttpResponse http_resp = client.post(url, {"Content-Type: application/json"}, body.dump(), 120);
 
   if (!http_resp.success) {
-    result.error = "Ollama request failed: " +
-                    (http_resp.error.empty() ? http_resp.body : http_resp.error) +
-                    ". Is Ollama running at " + base + "?";
+    std::string detail = http_resp.body;
+    try {
+      json err_json = json::parse(http_resp.body);
+      if (err_json.contains("error")) {
+        detail = err_json.value("error", http_resp.body);  // Ollama uses a flat string, not error.message
+      }
+    } catch (...) {
+    }
+    if (detail.empty()) detail = http_resp.error;
+    result.error = "Ollama request failed (HTTP " + std::to_string(http_resp.status_code) +
+                    "): " + detail + ". Is Ollama running at " + base + "?";
     return result;
   }
 

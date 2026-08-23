@@ -24,7 +24,26 @@ AIResponse OpenRouterProvider::sendMessage(const std::vector<Message>& history,
 
   json messages = json::array();
   for (const auto& msg : history) {
-    json m = {{"role", msg.role}, {"content", msg.content}};
+    json m = {{"role", msg.role}};
+
+    // Assistant turns that requested tool calls must echo those calls back in
+    // OpenAI's tool_calls schema, or the API rejects the follow-up "tool" role
+    // message for referencing a call id that was never declared.
+    if (!msg.tool_calls.empty()) {
+      m["content"] = msg.content.empty() ? nullptr : json(msg.content);
+      json calls = json::array();
+      for (const auto& tc : msg.tool_calls) {
+        calls.push_back({
+            {"id", tc.id},
+            {"type", "function"},
+            {"function", {{"name", tc.name}, {"arguments", tc.arguments.dump()}}},
+        });
+      }
+      m["tool_calls"] = calls;
+    } else {
+      m["content"] = msg.content;
+    }
+
     if (msg.role == "tool" && !msg.tool_call_id.empty()) {
       m["tool_call_id"] = msg.tool_call_id;
     }
@@ -63,8 +82,17 @@ AIResponse OpenRouterProvider::sendMessage(const std::vector<Message>& history,
                                         body.dump());
 
   if (!http_resp.success) {
-    result.error = "OpenRouter request failed: " +
-                    (http_resp.error.empty() ? http_resp.body : http_resp.error);
+    std::string detail = http_resp.body;
+    try {
+      json err_json = json::parse(http_resp.body);
+      if (err_json.contains("error")) {
+        detail = err_json["error"].value("message", http_resp.body);
+      }
+    } catch (...) {
+    }
+    if (detail.empty()) detail = http_resp.error;
+    result.error = "OpenRouter request failed (HTTP " + std::to_string(http_resp.status_code) +
+                    "): " + detail;
     return result;
   }
 
