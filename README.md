@@ -16,13 +16,39 @@ Before building this project, ensure you have the following utilities installed 
 aphelion/
 ├── CMakeLists.txt                       # Core CMake configuration script
 ├── README.md                            # Project documentation and setup guide
-├── settings.json                        # Aphelion config file (theme, thinker, AI provider)
-├── src                                  # Aphelion source files
-│   ├── main.cpp
-│   └── ai                               # AI provider abstraction layer (Gemini, OpenRouter, Ollama)
-├── themes                               # Theme files
-└── thinkers                             # Thinker files
+├── themes                               # Default theme JSON - reference copies only, see below
+├── thinkers                             # Default thinker JSON - reference copies only, see below
+└── src                                  # Aphelion source files
+    ├── main.cpp
+    ├── config_paths.h/.cpp               # Resolves ~/.aphelion/ - see Configuration below
+    ├── default_assets.h                  # Default theme/thinker JSON embedded into the binary
+    ├── ai                                # AI provider abstraction layer (Gemini, OpenRouter, Ollama)
+    └── tools                             # Tools the AI can call (scan_project, etc.)
 ```
+
+## Configuration & Data Directory
+
+**Breaking change (pre-alpha):** Aphelion no longer reads `settings.json`,
+`history/`, `themes/`, or `thinkers/` from the current working directory.
+All of that now lives under `~/.aphelion/` (`$HOME` on Linux/macOS,
+`%USERPROFILE%` on Windows), resolved the same way regardless of which
+directory you run the binary from:
+
+```txt
+~/.aphelion/
+├── settings.json    # created with defaults on first run
+├── history/         # saved sessions and /scan digests
+├── themes/          # seeded from the built-in defaults on first run
+└── thinkers/        # seeded from the built-in defaults on first run
+```
+
+This directory is created automatically the first time you run Aphelion -
+nothing to set up by hand. The `themes/`/`thinkers/` folders in the repo are
+kept as the human-readable source the built-in defaults in
+`src/default_assets.h` are generated from; they aren't read at runtime.
+There's no migration path from a pre-existing repo-root `settings.json` or
+`history/` - if you have one from before this change, it's now unused and
+safe to delete.
 
 ## AI Providers
 

@@ -24,6 +24,7 @@ find_package(CURL REQUIRED)
 # Define your main executable
 add_executable(aphelion
     src/main.cpp
+    src/config_paths.cpp
     src/tools/scan.cpp
     src/tools/scan_tool.cpp
     src/tools/registry.cpp
