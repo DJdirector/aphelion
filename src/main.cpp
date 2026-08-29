@@ -19,6 +19,7 @@
 #include "ai/provider_factory.h"
 #include "tools/scan.h"
 #include "tools/registry.h"
+#include "config_paths.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -274,19 +275,19 @@ std::string sanitizeSessionFilename(std::string filename) {
 std::string createNewSessionFilepath() {
   auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   std::stringstream ss_filename;
-  ss_filename << "history/session_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".json";
-  return ss_filename.str();
+  ss_filename << "session_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".json";
+  return (config_paths::historyDir() / ss_filename.str()).string();
 }
 
 // Same convention, for saved project scans.
 std::string createScanFilepath() {
   auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   std::stringstream ss_filename;
-  ss_filename << "history/scan_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".txt";
-  return ss_filename.str();
+  ss_filename << "scan_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".txt";
+  return (config_paths::historyDir() / ss_filename.str()).string();
 }
 
-SETTINGS loadSettings(const std::string& file_path = "settings.json") {
+SETTINGS loadSettings(const std::string& file_path = config_paths::settingsFilePath().string()) {
   if (!fs::exists(file_path)) {
     ai::AISettings default_ai;
     json default_config = {
@@ -319,7 +320,7 @@ SETTINGS loadSettings(const std::string& file_path = "settings.json") {
   return settings;
 }
 
-void saveSettings(const SETTINGS& settings, const std::string& file_path = "settings.json") {
+void saveSettings(const SETTINGS& settings, const std::string& file_path = config_paths::settingsFilePath().string()) {
   json settings_data = {
     {"first_run", settings.first_run},
     {"theme", settings.theme},
@@ -336,7 +337,7 @@ void saveSettings(const SETTINGS& settings, const std::string& file_path = "sett
 }
 
 THEME loadTheme(const std::string& theme_name) {
-  std::string file_path = "themes/" + theme_name + ".json";
+  std::string file_path = (config_paths::themesDir() / (theme_name + ".json")).string();
 
   std::ifstream file(file_path);
   if (!file.is_open()) {
@@ -363,7 +364,7 @@ THEME loadTheme(const std::string& theme_name) {
 }
 
 THINKER loadThinker(const std::string& thinker_name) {
-  std::string file_path = "thinkers/" + thinker_name + ".json";
+  std::string file_path = (config_paths::thinkersDir() / (thinker_name + ".json")).string();
 
   std::ifstream file(file_path);
   if (!file.is_open()) {
@@ -390,8 +391,8 @@ THINKER loadThinker(const std::string& thinker_name) {
 
 void saveSessionHistory(const std::string& session_filepath, const std::vector<ChatMessage>& chat_history) {
   try {
-    if (!fs::exists("history")) {
-      fs::create_directory("history");
+    if (!fs::exists(config_paths::historyDir())) {
+      fs::create_directory(config_paths::historyDir());
     }
 
     json history_json = json::array();
@@ -562,17 +563,17 @@ bool handleCommand(
   }
 
   if (command == "/sessions") {
-    printHex(current_theme.yellow, " Saved Sessions (history/):\n");
-    if (!fs::exists("history") || fs::is_empty("history")) {
+    printHex(current_theme.yellow, " Saved Sessions (" + config_paths::historyDir().string() + "):\n");
+    if (!fs::exists(config_paths::historyDir()) || fs::is_empty(config_paths::historyDir())) {
       printHex(current_theme.foreground, "  No saved sessions found.\n\n");
       return true;
     }
     
-    for (const auto& entry : fs::directory_iterator("history")) {
+    for (const auto& entry : fs::directory_iterator(config_paths::historyDir())) {
       if (entry.is_regular_file() && entry.path().extension() == ".json") {
         std::string filename = entry.path().filename().string();
         printHex(current_theme.foreground, "  • " + filename);
-        if ("history/" + filename == session_filepath) {
+        if (entry.path().string() == session_filepath) {
           printHex(current_theme.accent, " (Active)");
         }
         std::cout << "\n";
@@ -586,7 +587,7 @@ bool handleCommand(
     std::string raw_filename;
     if (ss >> raw_filename) {
       std::string filename = sanitizeSessionFilename(raw_filename);
-      std::string target_path = "history/" + filename;
+      std::string target_path = (config_paths::historyDir() / filename).string();
       
       if (!fs::exists(target_path)) {
         printHex(current_theme.red, " ✗ Session not found. It might have gotten deleted.\n\n");
@@ -636,7 +637,7 @@ bool handleCommand(
     std::string raw_filename;
     if (ss >> raw_filename) {
       std::string filename = sanitizeSessionFilename(raw_filename);
-      std::string target_path = "history/" + filename;
+      std::string target_path = (config_paths::historyDir() / filename).string();
       
       if (!fs::exists(target_path)) {
         printHex(current_theme.red, " ✗ Session not found. It might have gotten deleted.\n\n");
@@ -821,7 +822,9 @@ std::string buildSystemPrompt() {
 
 int main() {
   try {
-    SETTINGS settings = loadSettings("settings.json");
+    config_paths::ensureConfigLayout();
+
+    SETTINGS settings = loadSettings();
     THEME current_theme = loadTheme(settings.theme);
     THINKER current_thinker = loadThinker(settings.thinker);
 
