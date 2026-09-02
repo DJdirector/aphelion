@@ -32,6 +32,7 @@ fs::path settingsFilePath() { return configDir() / "settings.json"; }
 fs::path historyDir() { return configDir() / "history"; }
 fs::path themesDir() { return configDir() / "themes"; }
 fs::path thinkersDir() { return configDir() / "thinkers"; }
+fs::path logsDir() { return configDir() / "logs"; }
 
 namespace {
 
@@ -46,6 +47,7 @@ void writeIfMissing(const fs::path& path, const std::string& content) {
 void ensureConfigLayout() {
   fs::create_directories(configDir());
   fs::create_directories(historyDir());
+  fs::create_directories(logsDir());
 
   // Only seed themes/thinkers the first time each directory itself is
   // created - if the directory already existed (even empty, e.g. the user

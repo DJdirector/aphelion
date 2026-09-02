@@ -17,6 +17,7 @@ std::filesystem::path settingsFilePath();
 std::filesystem::path historyDir();
 std::filesystem::path themesDir();
 std::filesystem::path thinkersDir();
+std::filesystem::path logsDir();
 
 // Creates ~/.aphelion and its subdirectories if missing, and seeds
 // themesDir()/thinkersDir() with the built-in defaults (see
