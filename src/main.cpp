@@ -20,6 +20,7 @@
 #include "tools/scan.h"
 #include "tools/registry.h"
 #include "config_paths.h"
+#include "logger.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -307,7 +308,12 @@ SETTINGS loadSettings(const std::string& file_path = config_paths::settingsFileP
   }
 
   json settings_data;
-  file >> settings_data;
+  try {
+    file >> settings_data;
+  } catch (const std::exception& e) {
+    logger::error("settings_load", "Malformed settings.json at " + file_path + ": " + e.what());
+    throw;
+  }
 
   SETTINGS settings;
   settings.first_run = settings_data.value("first_run", true);
@@ -421,7 +427,8 @@ void saveSessionHistory(const std::string& session_filepath, const std::vector<C
     if (out_file.is_open()) {
       out_file << history_json.dump(4);
     }
-  } catch (...) {
+  } catch (const std::exception& e) {
+    logger::error("session_save", "Failed to save session to " + session_filepath + ": " + e.what());
   }
 }
 
@@ -626,6 +633,7 @@ bool handleCommand(
         printHex(current_theme.foreground, "Loaded session: ");
         printHex(current_theme.accent, filename + " (" + std::to_string(chat_history.size()) + " messages)\n\n");
       } catch (const std::exception& e) {
+        logger::error("session_load", "Failed to load " + target_path + ": " + e.what());
         printHex(current_theme.red, " ✗ Error parsing session file: " + std::string(e.what()) + "\n\n");
       }
     } else {
@@ -657,6 +665,7 @@ bool handleCommand(
           printHex(current_theme.yellow, " Active session was deleted. Started a new fresh context.\n\n");
         }
       } catch (const std::exception& e) {
+        logger::error("session_delete", "Failed to delete " + target_path + ": " + e.what());
         printHex(current_theme.red, " ✗ Error deleting session: " + std::string(e.what()) + "\n\n");
       }
     } else {
@@ -677,6 +686,7 @@ bool handleCommand(
         printHex(current_theme.foreground, "Theme updated to: ");
         printHex(current_theme.accent, new_theme + "\n\n");
       } catch (const std::exception& e) {
+        logger::error("theme_load", "Failed to load theme \"" + new_theme + "\": " + e.what());
         printHex(current_theme.red, " ✗ Error loading theme: " + std::string(e.what()) + "\n\n");
       }
     } else {
@@ -694,6 +704,7 @@ bool handleCommand(
         saveSettings(settings);
         printHex(current_theme.green, " Thinker updated to: " + new_thinker + "\n\n");
       } catch (const std::exception& e) {
+        logger::error("thinker_load", "Failed to load thinker \"" + new_thinker + "\": " + e.what());
         printHex(current_theme.red, " Error loading thinker: " + std::string(e.what()) + "\n\n");
       }
     } else {
@@ -719,6 +730,7 @@ bool handleCommand(
         printHex(current_theme.accent, new_provider + "\n\n");
       } catch (const std::exception& e) {
         settings.ai.provider = previous_provider;
+        logger::error("provider_switch", "Failed to switch to provider \"" + new_provider + "\": " + e.what());
         printHex(current_theme.red, " ✗ Error switching provider: " + std::string(e.what()) + "\n\n");
       }
     } else {
@@ -745,6 +757,7 @@ bool handleCommand(
         printHex(current_theme.foreground, "Model for " + settings.ai.provider + " set to: ");
         printHex(current_theme.accent, new_model + "\n\n");
       } catch (const std::exception& e) {
+        logger::error("model_update", "Failed to set model \"" + new_model + "\" for " + settings.ai.provider + ": " + e.what());
         printHex(current_theme.red, " ✗ Error updating model: " + std::string(e.what()) + "\n\n");
       }
     } else {
@@ -779,6 +792,9 @@ bool handleCommand(
 
     printHex(current_theme.foreground, "  History directory: ");
     printHex(current_theme.accent, config_paths::historyDir().string() + "\n");
+
+    printHex(current_theme.foreground, "  Logs directory:    ");
+    printHex(current_theme.accent, config_paths::logsDir().string() + "\n");
 
     std::cout << "\n";
     return true;
@@ -869,6 +885,7 @@ int main() {
     } catch (const std::exception& e) {
       // Don't hard-fail startup over a bad provider config; let the user fix it
       // with /provider once the REPL is up.
+      logger::error("provider_setup", e.what());
       std::cerr << "Warning: " << e.what() << std::endl;
     }
 
@@ -934,6 +951,7 @@ int main() {
                 chat_history.pop_back();  // don't keep a user turn that got no reply at all
               }
               saveSessionHistory(session_filepath, chat_history);
+              logger::error("ai_request", response.error);
               printHex(current_theme.red, " ✗ AI error: " + response.error + "\n\n");
               turn_done = true;
               break;
@@ -961,7 +979,18 @@ int main() {
               printHex(current_theme.foreground, "Running tool: ");
               printHex(current_theme.accent, call.name + "\n");
 
-              ai::Message tool_result = tools::executeToolCall(call);
+              ai::Message tool_result;
+              try {
+                tool_result = tools::executeToolCall(call);
+              } catch (const std::exception& e) {
+                logger::error("tool_execution", "Tool \"" + call.name + "\" threw: " + e.what());
+                tool_result.role = "tool";
+                tool_result.tool_call_id = call.id;
+                tool_result.tool_name = call.name;
+                tool_result.content = "Error: tool execution failed - " + std::string(e.what());
+                printHex(current_theme.red,
+                         " ✗ Tool \"" + call.name + "\" failed: " + std::string(e.what()) + "\n");
+              }
 
               ChatMessage tool_msg;
               tool_msg.role = "tool";
@@ -983,6 +1012,7 @@ int main() {
 
   } catch (const std::exception& e) {
     std::cout << "\033[?25h";
+    logger::error("fatal", e.what());
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
   }
