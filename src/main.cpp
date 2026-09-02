@@ -507,6 +507,7 @@ bool handleCommand(
     printHex(current_theme.foreground, "  /thinker <name> - Change active thinker spinner\n");
     printHex(current_theme.foreground, "  /provider <name>- Switch AI provider (gemini, openrouter, ollama)\n");
     printHex(current_theme.foreground, "  /model <name>   - Set the model for the active provider\n");
+    printHex(current_theme.foreground, "  /paths          - Show resolved config directory and file paths\n");
     printHex(current_theme.foreground, "  /scan           - Locally scan the project and add it to context\n");
     printHex(current_theme.foreground, "  /exit, /quit    - Exit the application\n\n");
     return true;
@@ -749,6 +750,37 @@ bool handleCommand(
     } else {
       printHex(current_theme.red, " Usage: /model <model_name>\n\n");
     }
+    return true;
+  }
+
+  if (command == "/paths") {
+    printHex(current_theme.yellow, " Aphelion Config Paths:\n");
+
+    printHex(current_theme.foreground, "  Config directory:  ");
+    printHex(current_theme.accent, config_paths::configDir().string() + "\n");
+
+    fs::path settings_path = config_paths::settingsFilePath();
+    printHex(current_theme.foreground, "  Settings file:     ");
+    printHex(current_theme.accent, settings_path.string());
+    printHex(fs::exists(settings_path) ? current_theme.green : current_theme.red,
+             fs::exists(settings_path) ? "  ✓\n" : "  ✗ missing\n");
+
+    fs::path theme_path = config_paths::themesDir() / (settings.theme + ".json");
+    printHex(current_theme.foreground, "  Active theme:      ");
+    printHex(current_theme.accent, theme_path.string());
+    printHex(fs::exists(theme_path) ? current_theme.green : current_theme.red,
+             fs::exists(theme_path) ? "  ✓\n" : "  ✗ missing\n");
+
+    fs::path thinker_path = config_paths::thinkersDir() / (settings.thinker + ".json");
+    printHex(current_theme.foreground, "  Active thinker:    ");
+    printHex(current_theme.accent, thinker_path.string());
+    printHex(fs::exists(thinker_path) ? current_theme.green : current_theme.red,
+             fs::exists(thinker_path) ? "  ✓\n" : "  ✗ missing\n");
+
+    printHex(current_theme.foreground, "  History directory: ");
+    printHex(current_theme.accent, config_paths::historyDir().string() + "\n");
+
+    std::cout << "\n";
     return true;
   }
 
