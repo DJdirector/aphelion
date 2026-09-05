@@ -975,21 +975,48 @@ int main() {
             }
 
             for (const auto& call : response.tool_calls) {
-              printHex(current_theme.yellow, " ⚙ ");
-              printHex(current_theme.foreground, "Running tool: ");
-              printHex(current_theme.accent, call.name + "\n");
-
               ai::Message tool_result;
-              try {
-                tool_result = tools::executeToolCall(call);
-              } catch (const std::exception& e) {
-                logger::error("tool_execution", "Tool \"" + call.name + "\" threw: " + e.what());
-                tool_result.role = "tool";
-                tool_result.tool_call_id = call.id;
-                tool_result.tool_name = call.name;
-                tool_result.content = "Error: tool execution failed - " + std::string(e.what());
-                printHex(current_theme.red,
-                         " ✗ Tool \"" + call.name + "\" failed: " + std::string(e.what()) + "\n");
+              bool proceed = true;
+
+              if (tools::isDestructive(call.name)) {
+                printHex(current_theme.yellow, " ⚠ ");
+                printHex(current_theme.foreground, "\"" + call.name + "\" wants to make a change:\n");
+                std::string preview = tools::getConfirmationPreview(call);
+                if (!preview.empty()) {
+                  printHex(current_theme.foreground, "  " + preview + "\n");
+                }
+                printHex(current_theme.accent, " Proceed? [y/N] ");
+
+                std::string confirm_input;
+                std::getline(std::cin, confirm_input);
+                proceed = (confirm_input == "y" || confirm_input == "Y");
+
+                if (!proceed) {
+                  tool_result.role = "tool";
+                  tool_result.tool_call_id = call.id;
+                  tool_result.tool_name = call.name;
+                  tool_result.content =
+                      "User declined to run this tool. Do not attempt it again unless the user explicitly asks.";
+                  printHex(current_theme.red, " ✗ Declined.\n");
+                }
+              }
+
+              if (proceed) {
+                printHex(current_theme.yellow, " ⚙ ");
+                printHex(current_theme.foreground, "Running tool: ");
+                printHex(current_theme.accent, call.name + "\n");
+
+                try {
+                  tool_result = tools::executeToolCall(call);
+                } catch (const std::exception& e) {
+                  logger::error("tool_execution", "Tool \"" + call.name + "\" threw: " + e.what());
+                  tool_result.role = "tool";
+                  tool_result.tool_call_id = call.id;
+                  tool_result.tool_name = call.name;
+                  tool_result.content = "Error: tool execution failed - " + std::string(e.what());
+                  printHex(current_theme.red,
+                           " ✗ Tool \"" + call.name + "\" failed: " + std::string(e.what()) + "\n");
+                }
               }
 
               ChatMessage tool_msg;
