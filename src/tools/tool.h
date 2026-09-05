@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "../ai/types.h"
 
 namespace tools {
@@ -18,6 +20,21 @@ class Tool {
   // message to feed back (content/tool_call_id/tool_name are the caller's
   // responsibility to set based on `call`, not embedded here).
   virtual ai::Message execute(const ai::ToolCall& call) const = 0;
+
+  // True if this tool can modify files, run commands, or otherwise change
+  // state outside the conversation - anything the user should explicitly
+  // approve before it runs. Defaults to false so read-only tools (like
+  // scan_project) don't need to override anything. The confirmation prompt
+  // itself is a REPL/UI concern and lives in main.cpp, not here - this
+  // interface only decides whether one is required.
+  virtual bool isDestructive() const { return false; }
+
+  // Human-readable description of exactly what this call is about to do -
+  // e.g. a diff for an edit, the literal command for a shell tool. Only
+  // ever called when isDestructive() is true, right before the user is
+  // asked to confirm. Default is empty since non-destructive tools never
+  // need one.
+  virtual std::string confirmationPreview(const ai::ToolCall& call) const { return ""; }
 };
 
 }  // namespace tools
