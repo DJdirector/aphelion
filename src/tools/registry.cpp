@@ -22,6 +22,15 @@ const std::vector<std::unique_ptr<Tool>>& toolInstances() {
   return instances;
 }
 
+const Tool* findTool(const std::string& name) {
+  for (const auto& tool : toolInstances()) {
+    if (tool->definition().name == name) {
+      return tool.get();
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 std::vector<ai::ToolDefinition> availableTools() {
@@ -32,11 +41,19 @@ std::vector<ai::ToolDefinition> availableTools() {
   return defs;
 }
 
+bool isDestructive(const std::string& tool_name) {
+  const Tool* tool = findTool(tool_name);
+  return tool ? tool->isDestructive() : false;
+}
+
+std::string getConfirmationPreview(const ai::ToolCall& call) {
+  const Tool* tool = findTool(call.name);
+  return tool ? tool->confirmationPreview(call) : "";
+}
+
 ai::Message executeToolCall(const ai::ToolCall& call) {
-  for (const auto& tool : toolInstances()) {
-    if (tool->definition().name == call.name) {
-      return tool->execute(call);
-    }
+  if (const Tool* tool = findTool(call.name)) {
+    return tool->execute(call);
   }
 
   ai::Message result;
