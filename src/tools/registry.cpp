@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "scan_tool.h"
+#include "edit_file_tool.h"
 #include "tool.h"
 
 namespace tools {
@@ -17,6 +18,7 @@ const std::vector<std::unique_ptr<Tool>>& toolInstances() {
   static const std::vector<std::unique_ptr<Tool>> instances = [] {
     std::vector<std::unique_ptr<Tool>> v;
     v.push_back(std::make_unique<ScanProjectTool>());
+    v.push_back(std::make_unique<EditFileTool>());
     return v;
   }();
   return instances;

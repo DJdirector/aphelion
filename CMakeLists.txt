@@ -28,6 +28,8 @@ add_executable(aphelion
     src/logger.cpp
     src/tools/scan.cpp
     src/tools/scan_tool.cpp
+    src/tools/edit.cpp
+    src/tools/edit_file_tool.cpp
     src/tools/registry.cpp
     src/ai/settings.cpp
     src/ai/http_client.cpp
