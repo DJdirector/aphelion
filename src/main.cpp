@@ -288,6 +288,25 @@ std::string createScanFilepath() {
   return (config_paths::historyDir() / ss_filename.str()).string();
 }
 
+// Reads a multi-line block of input for /edit's old_str/new_str, terminated
+// by a line containing only "EOF" - the same heredoc-style convention used
+// pretty much everywhere a REPL needs multi-line text without a real text
+// editor. The trailing newline before EOF is stripped so this matches how a
+// model's JSON string argument wouldn't have one forced on it either.
+std::string readMultilineBlock(const THEME& theme, const std::string& prompt_label) {
+  printHex(theme.foreground, " " + prompt_label + " (end with a line containing only 'EOF'):\n");
+  std::string block;
+  std::string line;
+  while (std::getline(std::cin, line)) {
+    if (line == "EOF") break;
+    block += line + "\n";
+  }
+  if (!block.empty() && block.back() == '\n') {
+    block.pop_back();
+  }
+  return block;
+}
+
 SETTINGS loadSettings(const std::string& file_path = config_paths::settingsFilePath().string()) {
   if (!fs::exists(file_path)) {
     ai::AISettings default_ai;
