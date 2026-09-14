@@ -851,6 +851,9 @@ bool handleCommand(
 // A short identity/system prompt sent to the model on every request so it
 // answers as Aphelion rather than surfacing the underlying provider/model.
 // Kept out of chat_history/session files on purpose - it's config, not a turn.
+// A short identity/system prompt sent to the model on every request so it
+// answers as Aphelion rather than surfacing the underlying provider/model.
+// Kept out of chat_history/session files on purpose - it's config, not a turn.
 std::string buildSystemPrompt() {
   return "You are Aphelion, a free and open-source AI coding agent that runs in the "
          "user's terminal. If asked who or what you are, answer as Aphelion - don't "
@@ -859,13 +862,16 @@ std::string buildSystemPrompt() {
          "direct, in keeping with a terminal tool. You may use standard Markdown - "
          "headers (#, ##, ###), **bold**, *italic*, `inline code`, fenced code blocks, "
          "and simple '- ' bullet lists - it is rendered directly in the terminal. Avoid "
-         "tables, images, nested/numbered lists, and links, which do not render well here. "
-         "You have a scan_project tool available: it returns a read-only text digest "
-         "(file tree + contents) of the user's project. Call it when you genuinely need to "
-         "see the codebase to answer - e.g. the user asks about 'this project', 'the "
-         "codebase', or wants you to review/explain/modify files you haven't seen yet. Don't "
-         "call it speculatively or more than once per turn unless the result truly didn't "
-         "answer what you needed - the user may be on a metered API plan.";
+         "tables, images, nested/numbered lists, and links, which do not render well here.\n"
+         "Available Tools:\n"
+         "- scan_project: Returns a read-only text digest (file tree + contents) of the project. "
+         "Use when you need an overview of the whole codebase.\n"
+         "- read_file: Reads and returns the raw contents of a single specified file. "
+         "Use when inspecting a specific file without rescanning the entire project.\n"
+         "- edit_file: Modifies the contents of an existing file. Use to update, patch, or refactor existing code.\n"
+         "- write_file: Creates a new file with specified content. Use when adding new files to the project.\n"
+         "Use tools judiciously when necessary to answer the user's request. Avoid speculative or redundant tool "
+         "calls, as the user may be on a metered API plan.";
 }
 
 int main() {
