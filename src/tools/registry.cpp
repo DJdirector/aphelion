@@ -6,6 +6,7 @@
 #include "edit_file_tool.h"
 #include "write_file_tool.h"
 #include "read_file_tool.h"
+#include "run_command_tool.h"
 #include "tool.h"
 
 namespace tools {
@@ -23,6 +24,7 @@ const std::vector<std::unique_ptr<Tool>>& toolInstances() {
     v.push_back(std::make_unique<EditFileTool>());
     v.push_back(std::make_unique<WriteFileTool>());
     v.push_back(std::make_unique<ReadFileTool>());
+    v.push_back(std::make_unique<RunCommandTool>());
     return v;
   }();
   return instances;
