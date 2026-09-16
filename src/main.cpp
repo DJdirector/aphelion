@@ -851,9 +851,6 @@ bool handleCommand(
 // A short identity/system prompt sent to the model on every request so it
 // answers as Aphelion rather than surfacing the underlying provider/model.
 // Kept out of chat_history/session files on purpose - it's config, not a turn.
-// A short identity/system prompt sent to the model on every request so it
-// answers as Aphelion rather than surfacing the underlying provider/model.
-// Kept out of chat_history/session files on purpose - it's config, not a turn.
 std::string buildSystemPrompt() {
   return "You are Aphelion, a free and open-source AI coding agent that runs in the "
          "user's terminal. If asked who or what you are, answer as Aphelion - don't "
@@ -868,10 +865,22 @@ std::string buildSystemPrompt() {
          "Use when you need an overview of the whole codebase.\n"
          "- read_file: Reads and returns the raw contents of a single specified file. "
          "Use when inspecting a specific file without rescanning the entire project.\n"
-         "- edit_file: Modifies the contents of an existing file. Use to update, patch, or refactor existing code.\n"
-         "- write_file: Creates a new file with specified content. Use when adding new files to the project.\n"
-         "Use tools judiciously when necessary to answer the user's request. Avoid speculative or redundant tool "
-         "calls, as the user may be on a metered API plan.";
+         "- edit_file: Replaces one exact, unique occurrence of old_str with new_str in an "
+         "existing file. old_str must match the file's current content exactly, including "
+         "whitespace, and must appear in only one place - if it's missing or ambiguous, widen "
+         "it with more surrounding context until it's unique. Use for updating, patching, or "
+         "refactoring existing code.\n"
+         "- write_file: Creates a brand-new file with the given content. Refuses if the file "
+         "already exists - use edit_file instead to modify an existing one.\n"
+         "- run_command: Executes a shell command and returns its output and exit code, with a "
+         "fixed timeout and output cap. The most powerful and highest-risk tool available - "
+         "prefer read_file/write_file/edit_file for simple file operations, and only reach for "
+         "this when you genuinely need to run a program (tests, builds, git, package managers, etc.).\n"
+         "edit_file, write_file, and run_command always show the user exactly what they're about "
+         "to do and require explicit approval before anything happens - use them proactively when "
+         "they'd genuinely help, since the user has full control over whether each one actually runs.\n"
+         "Use tools judiciously when necessary to answer the user's request. Avoid speculative or "
+         "redundant tool calls, as the user may be on a metered API plan.";
 }
 
 int main() {
