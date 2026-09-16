@@ -34,6 +34,7 @@ add_executable(aphelion
     src/tools/read.cpp
     src/tools/read_file_tool.cpp
     src/tools/command.cpp
+    src/tools/run_command_tool.cpp
     src/tools/registry.cpp
     src/ai/settings.cpp
     src/ai/http_client.cpp
